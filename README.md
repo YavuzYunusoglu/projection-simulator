@@ -25,7 +25,8 @@ Slides that look crisp on a laptop often fall apart on a classroom projector. A 
 - **Back-row readability** — viewing distance, eyesight, projector resolution and focus are modelled as blur, and the app recommends a minimum font size for the chosen seat.
 - **Problem map** — tile-by-tile comparison of the original and the simulated slide highlights text that loses contrast, details that blur away and content that falls off the screen.
 - **Compare slider** — drag between "on your laptop" and "projected".
-- **Room and screen views** — a view of the wall with screen, window and whiteboard, or a close-up of the screen.
+- **Room and screen views** — a view of the wall from the chosen seat (it zooms with the viewing distance), or a close-up of the screen.
+- **Full screen** — button, double-click or <kbd>F</kbd>; a small toolbar lets you change slides, view, seat and overlays without leaving it.
 - **Calibration from a photo**
   - *Test pattern:* show the built-in pattern on the projector, photograph it from a seat, upload the photo. Coded markers are found automatically; the projected image, screen edges, contrast, room light and colour response are measured.
   - *Any photo:* use any picture of a slide on the projector together with the slide itself (or the one open in the app). Corners are estimated and can be adjusted with a magnifier.

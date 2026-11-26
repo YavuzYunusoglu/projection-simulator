@@ -1,5 +1,5 @@
 // Offline support for the app shell and libraries.
-const VERSION = 'projsim-v1';
+const VERSION = 'projsim-v2';
 const ASSETS = [
   './',
   "./css/app.css",
@@ -45,6 +45,7 @@ const ASSETS = [
   "./js/theme.js",
   "./js/ui/controls.js",
   "./js/ui/findings.js",
+  "./js/ui/fullscreen.js",
   "./js/ui/motion.js",
   "./js/ui/overlay.js",
   "./js/ui/profiles.js",

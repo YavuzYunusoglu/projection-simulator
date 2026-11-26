@@ -46,6 +46,7 @@ export default {
   acu: { sharp: 'Sharp', typical: 'Typical', weak: 'Weak' },
   ro: { contrast: 'Contrast', screen: 'Projector on screen', ambient: 'Room light', visible: 'On screen', minFont: 'Min. text @ {d} m', pixel: '1 px' },
   overlay: { safe: 'SAFE AREA' },
+  fs: { enter: 'Full screen (F)', exit: 'Exit full screen (Esc)', prev: 'Previous slide', next: 'Next slide', toolbar: 'Full screen controls' },
   find: {
     title: 'What to fix',
     empty: 'Open a slide to get advice for this room.',

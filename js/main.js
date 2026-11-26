@@ -14,6 +14,7 @@ import { initProfiles } from './ui/profiles.js';
 import { reducedMotion, toast, wireDialog } from './ui/motion.js';
 import { sampleSlide } from './loaders/sample.js';
 import { initCalibration } from './calib/ui.js';
+import { initFullscreen, toggleFullscreen } from './ui/fullscreen.js';
 
 const $ = (id) => document.getElementById(id);
 const UNIT = [[0, 0], [1, 0], [1, 1], [0, 1]];
@@ -335,6 +336,7 @@ window.addEventListener('drop', (e) => {
 // keyboard slide navigation
 window.addEventListener('keydown', (e) => {
   if (document.querySelector('dialog[open]') || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); toggleFullscreen(); return; }
   if (e.key === 'ArrowDown' || e.key === 'PageDown' || (e.key === 'ArrowRight' && !e.target.closest('.cmp-handle'))) { selectSlide(store.state.current + 1); }
   if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'ArrowLeft') { selectSlide(store.state.current - 1); }
 });
@@ -374,6 +376,7 @@ $('aboutBtn').addEventListener('click', () => $('aboutDlg').showModal());
 buildControls($('controls'));
 initProfiles();
 initCalibration({ getSlideImage: () => slideImage, getScene: () => scene });
+initFullscreen();
 updatePanels();
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {

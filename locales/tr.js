@@ -46,6 +46,7 @@ export default {
   acu: { sharp: 'Keskin', typical: 'Ortalama', weak: 'Zayıf' },
   ro: { contrast: 'Kontrast', screen: 'Perdedeki projektör', ambient: 'Ortam ışığı', visible: 'Perdede', minFont: 'En küçük yazı @ {d} m', pixel: '1 px' },
   overlay: { safe: 'GÜVENLİ ALAN' },
+  fs: { enter: 'Tam ekran (F)', exit: 'Tam ekrandan çık (Esc)', prev: 'Önceki slayt', next: 'Sonraki slayt', toolbar: 'Tam ekran denetimleri' },
   find: {
     title: 'Neyi düzeltmeli',
     empty: 'Bu oda için öneri almak üzere bir slayt aç.',

@@ -25,7 +25,8 @@ Bilgisayarda net görünen slaytlar sınıftaki projektörde çoğu zaman dağı
 - **Arka sıra okunabilirliği** — izleme mesafesi, görme keskinliği, projektör çözünürlüğü ve odak bulanıklık olarak modellenir; seçilen koltuk için en küçük yazı boyutu önerilir.
 - **Sorun haritası** — orijinal ve simüle edilmiş slayt karo karo karşılaştırılır; kontrastını kaybeden yazılar, bulanıklaşan ayrıntılar ve perdenin dışına düşen içerik işaretlenir.
 - **Karşılaştırma kaydırıcısı** — "bilgisayarında" ile "perdede" arasında sürükle.
-- **Oda ve perde görünümleri** — perde, pencere ve beyaz tahtanın olduğu duvar görünümü ya da perdeye yakın görünüm.
+- **Oda ve perde görünümleri** — seçilen koltuktan duvar görünümü (izleme mesafesiyle yaklaşıp uzaklaşır) ya da perdeye yakın görünüm.
+- **Tam ekran** — düğme, çift tıklama ya da <kbd>F</kbd>; küçük bir araç çubuğuyla tam ekrandan çıkmadan slayt, görünüm, koltuk ve katmanlar değiştirilebilir.
 - **Fotoğraftan kalibrasyon**
   - *Test deseni:* hazır deseni projektörde göster, oturduğun yerden fotoğrafını çek, yükle. Kodlu işaretler otomatik bulunur; yansıyan görüntü, perde kenarları, kontrast, ortam ışığı ve renk tepkisi ölçülür.
   - *Herhangi bir fotoğraf:* projektördeki bir slaytın herhangi bir fotoğrafını, slaytın kendisiyle (ya da uygulamada açık olanla) birlikte kullan. Köşeler tahmin edilir, büyüteçle ince ayar yapılabilir.
