@@ -81,6 +81,8 @@ export class Overlay {
       ctx.closePath();
       ctx.stroke();
       ctx.setLineDash([]);
+      // labels only when the frame is big enough to carry them
+      if (Math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]) < 260 * dpr) { ctx.restore(); return; }
       // label
       const fs = 11 * dpr;
       ctx.font = `500 ${fs}px "Plex Mono", ui-monospace, monospace`;

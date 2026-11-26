@@ -1,10 +1,10 @@
 import { store } from './state.js';
-import { t, applyI18n, setLang, getLang, onLang } from './i18n.js';
+import { t, num, applyI18n, setLang, getLang, onLang } from './i18n.js';
 import { cycleTheme, getThemePref, onTheme, cssVar } from './theme.js';
 import { computeScene } from './sim/scene.js';
 import { SimRenderer } from './sim/renderer.js';
 import { solveHomography, invertH } from './sim/homography.js';
-import { roomLayout, fitCamera } from './sim/room.js';
+import { roomLayout, fitCamera, viewerCamera } from './sim/room.js';
 import { analyze, lumaPlane, downsample2 } from './sim/analysis.js';
 import { buildControls } from './ui/controls.js';
 import { Overlay } from './ui/overlay.js';
@@ -57,7 +57,7 @@ function buildTarget() {
   const canvas = $('glCanvas');
   const aspect = canvas.width / Math.max(1, canvas.height);
   const cam = store.state.view === 'room'
-    ? fitCamera(room.room, aspect, 0.01, scene.cornersM)
+    ? viewerCamera(p.viewer.distance, aspect, room.screen, scene.cornersM)
     : fitCamera(room.screen, aspect, 0.04, scene.cornersM);
   const proj = p.projector.colorMatrix
     ? p.projector.colorMatrix
@@ -77,10 +77,13 @@ function buildTarget() {
     sigma: scene.blur.sigma, cam, room: store.state.view === 'room' ? 1 : 0,
     curtain: 1 - Math.min(1, Math.max(0, Math.log10(lux + 1) / Math.log10(900))),
     screenW: scene.screenW, screenH: scene.screenH, gain: L.gain,
-    wb: room.wb, win: room.win, ceil: room.ceil, trunk: room.trunk,
+    wb: room.wb, win: room.win, ceil: room.ceil, trunk: room.trunk, floor: room.floor,
     slideAspect: scene.aspect,
   };
   if (!current) current = JSON.parse(JSON.stringify(target));
+  const tag = $('viewTag');
+  tag.hidden = store.state.view !== 'room' || !slide;
+  tag.textContent = t('view.seat', { d: num(p.viewer.distance, 1) });
   kick();
 }
 

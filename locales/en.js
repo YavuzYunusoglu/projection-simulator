@@ -5,7 +5,7 @@ export default {
   view: {
     label: 'View', room: 'Room', screen: 'Screen', compare: 'Compare', compareHint: 'Compare with the slide on your laptop',
     safe: 'Safe zone', safeHint: 'Show the area that lands on the screen', heat: 'Problems', heatHint: 'Mark hard-to-read areas',
-    laptop: 'On your laptop', projected: 'Projected',
+    laptop: 'On your laptop', projected: 'Projected', seat: 'Seen from {d} m',
   },
   empty: {
     title: 'See your slides the way the back row will.',
@@ -36,7 +36,7 @@ export default {
     gain: '1.0 is a plain matte white screen.',
     scale: 'Above 100% the picture spills over the screen edges.',
     keystone: 'Trapezoid distortion from a tilted projector.',
-    distance: 'Use the farthest seat you care about.',
+    distance: 'Use the farthest seat you care about. The room view moves with it.',
   },
   amb: {
     dark: 'Dark', closed: 'Curtains closed', lights: 'Lights on', open: 'Curtains open', sunny: 'Sunny room',

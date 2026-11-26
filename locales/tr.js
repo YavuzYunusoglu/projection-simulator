@@ -5,7 +5,7 @@ export default {
   view: {
     label: 'Görünüm', room: 'Oda', screen: 'Perde', compare: 'Karşılaştır', compareHint: 'Bilgisayarındaki slaytla karşılaştır',
     safe: 'Güvenli alan', safeHint: 'Perdeye düşen alanı göster', heat: 'Sorunlar', heatHint: 'Zor okunan alanları işaretle',
-    laptop: 'Bilgisayarında', projected: 'Perdede',
+    laptop: 'Bilgisayarında', projected: 'Perdede', seat: '{d} m uzaktan görünüm',
   },
   empty: {
     title: 'Slaytlarını arka sıradakilerin göreceği gibi gör.',
@@ -36,7 +36,7 @@ export default {
     gain: '1,0 düz mat beyaz perdedir.',
     scale: '%100’ün üstünde görüntü perdenin kenarlarından taşar.',
     keystone: 'Eğik duran projektörün yarattığı yamuk bozulma.',
-    distance: 'Önemsediğin en uzak koltuğu seç.',
+    distance: 'Önemsediğin en uzak koltuğu seç. Oda görünümü de bu mesafeye göre yaklaşır/uzaklaşır.',
   },
   amb: {
     dark: 'Karanlık', closed: 'Perdeler kapalı', lights: 'Işıklar açık', open: 'Perdeler açık', sunny: 'Güneşli oda',

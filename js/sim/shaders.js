@@ -69,6 +69,7 @@ uniform vec4 uWB;             // whiteboard rect x0,y0,x1,y1
 uniform vec4 uWin;            // window rect
 uniform float uCeil;          // ceiling y
 uniform float uTrunk;         // cable trunking y
+uniform float uFloor;         // floor line y
 uniform vec3 uStage;          // background for compare panel (sRGB)
 uniform vec3 uAdapt;          // viewer's chromatic adaptation white
 in vec2 vUv;
@@ -164,6 +165,13 @@ void surface(vec2 p, out vec3 albedo, out float spec, out vec3 emit) {
     } else {
       albedo = vec3(0.8);
     }
+    return;
+  }
+  // floor with a skirting board
+  if (p.y > uFloor) {
+    if (p.y < uFloor + 0.08) { albedo = vec3(0.32, 0.31, 0.3); return; }
+    float boards = 0.94 + 0.06 * step(0.5, fract(p.x * 1.6 + floor(p.y * 3.0) * 0.5));
+    albedo = vec3(0.42, 0.4, 0.37) * boards * (0.96 + 0.04 * vnoise(p * 40.0));
     return;
   }
   // ceiling

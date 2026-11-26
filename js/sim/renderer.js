@@ -177,6 +177,7 @@ export class SimRenderer {
     gl.uniform4fv(u.uWin, U.win);
     gl.uniform1f(u.uCeil, U.ceil);
     gl.uniform1f(u.uTrunk, U.trunk);
+    gl.uniform1f(u.uFloor, U.floor ?? 100);
     gl.uniform3fv(u.uStage, U.stage);
     gl.uniform3fv(u.uAdapt, U.adapt || [1, 1, 1]);
   }
