@@ -3,7 +3,7 @@ import { store } from '../state.js';
 import { t, num, onLang, getLang } from '../i18n.js';
 import { toast, wireDialog } from '../ui/motion.js';
 import { saveProfile } from '../ui/profiles.js';
-import { solveHomography, squareToQuad, applyH, pointInPolygon } from '../sim/homography.js';
+import { solveHomography, squareToQuad, applyH, pointInPolygon, polygonArea } from '../sim/homography.js';
 import { computeScene } from '../sim/scene.js';
 import { srgbToLinear, linearToSrgb } from '../sim/photometry.js';
 import { drawPattern, patternLayout, GRAYS, COLORS } from './pattern.js';
@@ -11,7 +11,8 @@ import { grayPlane, detectMarkers, fitPatternAspect, estimateScreenInPattern, sa
 import { buildPhotoRoom, whiteMask } from './photoroom.js';
 import { useBuiltRoom, canvasToBlob } from '../photoview.js';
 import { luminance } from '../sim/photometry.js';
-import { fitAffine, fitGamma, deriveModel } from './colorfit.js';
+import { fitAffine, fitGamma, deriveModel, validateModel } from './colorfit.js';
+import { rectifyGray, matchScore, grayOfSource } from './match.js';
 import { QuadEditor } from './editor.js';
 
 const $ = (id) => document.getElementById(id);
@@ -24,13 +25,14 @@ const st = {
   photo: null,        // canvas
   photoData: null,    // ImageData of photo
   photoBlob: null,
-  ref: 'current',     // 'current' | canvas
   refCanvas: null,
   detected: null,     // { markers, aspect }
   surface: 'screen',  // projection surface seen in the photo
   wallColor: null,
   applied: null,
   dlSize: 'screen',
+  matches: [],        // [{ key, name, src, score }] candidates for "which slide is in the photo"
+  refKey: null,       // chosen candidate key, or 'none'
   step: 1,
 };
 
@@ -162,11 +164,22 @@ function runPatternDetection() {
 
 function runPhotoGuess() {
   const { g, w, h, s } = grayOf(st.photo);
-  const q = brightRegionQuad(g, w, h);
-  const proj = q ? q.map(([x, y]) => [x / s, y / s]) : defaultQuad(st.photo, 0.12);
+  let q = brightRegionQuad(g, w, h);
+  // in a white room the brightest region can be half the photo: not a believable guess
+  if (q && polygonArea(q) > 0.5 * w * h) q = null;
+  const proj = q ? q.map(([x, y]) => [x / s, y / s]) : centreQuad(st.photo);
   st.detected = null;
   editor.setQuads({ proj, screen: st.surface === 'wall' ? null : shrink(proj, 0.04) });
+  updateMatches(true);
   setStatus(t('calib.guessed'));
+}
+
+function centreQuad(c) {
+  const a = 16 / 9;
+  let qw = c.width * 0.7, qh = qw / a;
+  if (qh > c.height * 0.5) { qh = c.height * 0.5; qw = qh * a; }
+  const x0 = (c.width - qw) / 2, y0 = (c.height - qh) / 2;
+  return [[x0, y0], [x0 + qw, y0], [x0 + qw, y0 + qh], [x0, y0 + qh]];
 }
 
 function defaultQuad(c, m) {
@@ -223,8 +236,30 @@ function patternColorFit(projQuad) {
   return { fit, gamma, measured, inputs };
 }
 
+const MATCH_MIN = 0.35;
+
+/** Score every loaded slide (and an uploaded screenshot) against the photo's picture. */
+function updateMatches(autoPick = true) {
+  const proj = editor && editor.quads.proj;
+  if (!st.photo || !proj) { st.matches = []; return; }
+  const photoGray = rectifyGray(st.photoData.data, st.photo.width, st.photo.height, proj);
+  const cands = store.state.slides.map((s, i) => ({ key: 's' + s.id, name: `${t('slides.slide')} ${i + 1}`, src: s.thumb }));
+  if (st.refCanvas) cands.push({ key: 'file', name: t('calib.refFile'), src: st.refCanvas });
+  for (const c of cands) c.score = matchScore(photoGray, grayOfSource(c.src));
+  cands.sort((a, b) => b.score - a.score);
+  st.matches = cands;
+  if (autoPick || !cands.some((c) => c.key === st.refKey)) {
+    st.refKey = cands.length && cands[0].score >= MATCH_MIN ? cands[0].key : 'none';
+  }
+}
+
+function currentRef() {
+  const c = st.matches.find((m) => m.key === st.refKey);
+  return c ? c.src : null;
+}
+
 function photoColorFit(projQuad, screenQuad) {
-  const ref = st.ref === 'current' ? deps.getSlideImage() : st.refCanvas;
+  const ref = currentRef();
   if (!ref) return null;
   const rw = 160, rh = Math.round((rw * ref.height) / ref.width);
   const c = document.createElement('canvas');
@@ -273,9 +308,12 @@ async function apply() {
   const sw = slide ? slide.width : 1920, sh = slide ? slide.height : 1080;
   const sc = computeScene(p, sw, sh);
   const color = st.tab === 'pattern' ? patternColorFit(proj) : photoColorFit(proj, screen || proj);
-  let model = null;
+  let model = null, colorRejected = false;
   if (color) {
     model = deriveModel(color.fit, color.gamma, sc.light);
+    if (!validateModel(color.fit, model, sc.light).ok) { model = null; colorRejected = true; }
+  }
+  if (model) {
     p.projector.colorMatrix = model.colorMatrix;
     p.projector.gamma = model.gamma;
     p.room.ambientLux = Math.min(5000, model.ambientLux);
@@ -283,11 +321,14 @@ async function apply() {
   }
   // re-lightable photo of the real room
   const L2 = computeScene(p, sw, sh).light;
-  const ratio = model ? Math.max(0.005, luminance(model.black) / Math.max(1e-6, luminance(model.white)))
-    : (L2.Ea + L2.Epb) / Math.max(1, L2.Epw - L2.Epb);
+  const clampR = (r) => Math.min(2, Math.max(0.005, r));
+  const ratio = clampR(model ? luminance(model.black) / Math.max(1e-6, luminance(model.white))
+    : (L2.Ea + L2.Epb) / Math.max(1, L2.Epw - L2.Epb));
   const isWhite = st.tab === 'pattern' ? whiteMask(st.detected ? st.detected.aspect : 16 / 9) : refWhiteMask();
   let room = null;
   try { room = buildPhotoRoom(st.photo, proj, isWhite, ratio); } catch (e) { console.error(e); }
+  const photoRejected = !room || !room.ok;
+  if (photoRejected) room = null;
   p.calib = room ? {
     quad: room.quad, Yamb: room.Yamb, Yproj: room.Yproj,
     Ea0: L2.Ea, Ep0: L2.Epw - L2.Epb, contrast: model ? model.effContrast : null,
@@ -302,7 +343,7 @@ async function apply() {
     await useBuiltRoom(room, p.calib, await canvasToBlob(st.photo, 480, 'image/jpeg', 0.8));
   }
   const after = computeScene(p, sw, sh);
-  st.applied = { model, color, cuts: after.cuts, visible: after.visibleFrac, onWall, photo: !!room };
+  st.applied = { model, color, cuts: after.cuts, visible: after.visibleFrac, onWall, photo: !!room, colorRejected, photoRejected, ambient: p.room.ambientLux };
   st.step = 5;
   renderSteps();
   toast(t('calib.applied'));
@@ -310,8 +351,8 @@ async function apply() {
 
 // For "any photo": where the reference slide is near white, the photo shows projector white.
 function refWhiteMask() {
-  const ref = st.ref === 'current' ? deps.getSlideImage() : st.refCanvas;
-  if (!ref) return () => false;
+  const ref = currentRef();
+  if (!ref) return null; // rely on the photo's brightness alone
   const rw = 240, rh = Math.round((rw * ref.height) / ref.width);
   const c = document.createElement('canvas');
   c.width = rw; c.height = rh;
@@ -346,7 +387,7 @@ function resultsHtml() {
   let sw = '';
   if (a.model) {
     rows.push([t('calib.rContrast'), `${num(a.model.effContrast, 1)}:1`]);
-    rows.push([t('calib.rAmbient'), `≈ ${num(a.model.ambientLux)} lx`]);
+    rows.push([t('calib.rAmbient'), `≈ ${num(a.ambient)} lx`]);
     rows.push([t('calib.rGamma'), num(a.model.gamma, 2)]);
     if (a.color && a.color.measured) {
       // normalise by the measured white patch (projector white + room light)
@@ -361,6 +402,10 @@ function resultsHtml() {
       sw = `<div class="swatches" title="${t('calib.swatchHint')}">${cells.join('')}</div><p class="muted small">${t('calib.swatchHint')}</p>`;
     }
   } else rows.push([t('calib.rColor'), t('calib.noColor')]);
+  const notes = [];
+  if (a.colorRejected) notes.push(t('calib.colorRejected'));
+  if (a.photoRejected) notes.push(t('calib.photoRejected'));
+  if (notes.length) sw += notes.map((n) => `<p class="calib-warn">${n}</p>`).join('');
   return `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>${sw}
     <label class="field"><span>${t('profiles.name')}</span><input type="text" id="calibName" maxlength="60" value="${escapeHtml(t('profiles.defaultName'))}"></label>
     <div class="btn-row" style="margin-top:8px"><button class="btn primary" id="calibSave"><svg class="ic"><use href="#i-save"/></svg>${t('calib.saveProfile')}</button>
@@ -385,10 +430,16 @@ function renderSteps() {
     html += step(3, t('calib.p3t'), `<p>${t('calib.p3b')}</p><div class="btn-row"><button class="btn primary" id="choosePhoto"><svg class="ic"><use href="#i-image"/></svg>${t('calib.choosePhoto')}</button></div>`, hasPhoto ? 'done' : s(3));
   } else {
     html += step(1, t('calib.q1t'), `<p>${t('calib.q1b')}</p><div class="btn-row"><button class="btn primary" id="choosePhoto"><svg class="ic"><use href="#i-image"/></svg>${t('calib.choosePhoto')}</button></div>`, hasPhoto ? 'done' : 'active');
-    const cur = deps.getSlideImage();
+    const best = st.matches[0];
+    const opts = st.matches.map((m) => `<option value="${m.key}" ${m.key === st.refKey ? 'selected' : ''}>${escapeHtml(m.name)} — ${num(m.score * 100, 0)}%</option>`).join('')
+      + `<option value="none" ${st.refKey === 'none' ? 'selected' : ''}>${t('calib.refNone')}</option>`;
+    const chosen = st.matches.find((m) => m.key === st.refKey);
+    const msg = !hasPhoto ? '' : chosen
+      ? `<p class="calib-ok">${t('calib.matchFound', { name: escapeHtml(chosen.name), p: num(chosen.score * 100, 0) })}</p>`
+      : `<p class="calib-warn">${t(best ? 'calib.matchNone' : 'calib.matchEmpty')}</p>`;
     html += step(2, t('calib.q2t'), `<p>${t('calib.q2b')}</p>
-      <label class="check"><input type="radio" name="refsrc" value="current" ${st.ref === 'current' ? 'checked' : ''} ${cur ? '' : 'disabled'}><span>${t('calib.refCurrent')}</span></label>
-      <label class="check"><input type="radio" name="refsrc" value="file" ${st.ref !== 'current' ? 'checked' : ''}><span>${t('calib.refFile')}${st.refCanvas ? ' ✓' : ''}</span></label>
+      ${hasPhoto ? `<div class="ref-row"><canvas id="refThumb" width="96" height="54"></canvas><div class="select-wrap grow"><select id="refSelect">${opts}</select><svg class="ic"><use href="#i-chev"/></svg></div></div>` : ''}
+      ${msg}
       <div class="btn-row" style="margin-top:6px"><button class="btn" id="chooseRef">${t('calib.chooseRef')}</button></div>`, hasPhoto ? (st.step > 4 ? 'done' : 'active') : '');
   }
   const surf = `<div class="ctl-top"><label>${t('layout.surface')}</label></div><div class="chips" id="surfChips">
@@ -403,7 +454,22 @@ function renderSteps() {
   const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
   on('showPattern', () => { st.step = Math.max(st.step, 2); showPattern(); renderSteps(); });
   on('choosePhoto', () => pickFile('image/*', loadPhoto));
-  on('chooseRef', () => pickFile('image/*', async (f) => { st.refCanvas = await readPhoto(f); st.ref = 'file'; renderSteps(); }));
+  on('chooseRef', () => pickFile('image/*', async (f) => {
+    st.refCanvas = await readPhoto(f);
+    updateMatches(false);
+    st.refKey = 'file';
+    st.applied = null;
+    renderSteps();
+  }));
+  const rs = $('refSelect');
+  if (rs) rs.addEventListener('change', () => { st.refKey = rs.value; st.applied = null; if (st.step > 4) st.step = 4; renderSteps(); });
+  const rt = $('refThumb');
+  if (rt) {
+    const g = rt.getContext('2d');
+    g.fillStyle = '#888'; g.fillRect(0, 0, rt.width, rt.height);
+    const src = currentRef();
+    if (src) g.drawImage(src, 0, 0, rt.width, rt.height);
+  }
   on('applyCalib', apply);
   on('dlPattern', downloadPattern);
   const dl = $('dlSize');
@@ -423,10 +489,6 @@ function renderSteps() {
     await saveProfile(name.slice(0, 60));
     $('calibDlg').close();
   });
-  box.querySelectorAll('input[name="refsrc"]').forEach((r) => r.addEventListener('change', () => {
-    st.ref = r.value === 'current' ? 'current' : 'file';
-    if (st.ref === 'file' && !st.refCanvas) pickFile('image/*', async (f) => { st.refCanvas = await readPhoto(f); renderSteps(); });
-  }));
 }
 
 function pickFile(accept, cb) {
@@ -468,7 +530,12 @@ export function initCalibration(d) {
   deps = d;
   const dlg = $('calibDlg');
   wireDialog(dlg);
-  editor = new QuadEditor($('calibCanvas'), $('loupe'), () => { st.applied = null; if (st.step > 4) st.step = 4; renderSteps(); });
+  editor = new QuadEditor($('calibCanvas'), $('loupe'), () => {
+    st.applied = null;
+    if (st.step > 4) st.step = 4;
+    if (st.tab === 'photo') updateMatches(st.refKey === 'none' || (st.matches[0] && st.refKey === st.matches[0].key));
+    renderSteps();
+  });
   document.querySelectorAll('#calibDlg [role="tab"]').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
   $('calibrateBtn').addEventListener('click', () => {
     renderSteps();

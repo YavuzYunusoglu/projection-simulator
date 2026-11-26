@@ -409,6 +409,10 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 .swatches { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin: 6px 0 4px; }
 .swatches div { aspect-ratio: 1; border-radius: 2px; position: relative; overflow: hidden; border: 1px solid var(--line); }
 .swatches div i { position: absolute; inset: 50% 0 0 0; }
+.calib-warn { margin: 8px 0 !important; padding: 8px 10px; border-left: 3px solid var(--warn); background: var(--surface-2); font-size: 12.5px; color: var(--ink) !important; }
+.calib-ok { margin: 8px 0 !important; font-size: 12.5px; color: var(--ok) !important; }
+.ref-row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.ref-row canvas { width: 96px; height: 54px; flex: none; border: 1px solid var(--line); border-radius: 2px; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 12.5px; margin: 4px 0 8px; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; font-family: var(--mono); text-align: right; }

@@ -66,3 +66,15 @@ export function deriveModel(fit, gamma, lighting) {
 }
 
 export const linearize = (rgb) => rgb.map(srgbToLinear);
+
+/**
+ * Is a colour fit physically sensible? A reference slide that does not match the photo
+ * produces a poor fit, a contrast near 1:1 or an absurd amount of room light.
+ */
+export function validateModel(fit, model, lighting) {
+  if (!fit || !model) return { ok: false, reason: 'none' };
+  if (!(fit.r2 >= 0.5)) return { ok: false, reason: 'fit' };
+  if (!(model.effContrast >= 1.15)) return { ok: false, reason: 'contrast' };
+  if (!(model.ambientLux <= 3000) || model.ambientLux > 4 * Math.max(lighting.Epw, 1)) return { ok: false, reason: 'ambient' };
+  return { ok: true };
+}

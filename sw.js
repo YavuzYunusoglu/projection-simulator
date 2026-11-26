@@ -1,7 +1,7 @@
 // Offline support for the app shell and libraries.
 // Network first: online visitors always get the latest deploy (no mix of old and new modules);
 // the cache is only a fallback when offline.
-const VERSION = 'projsim-v3';
+const VERSION = 'projsim-v4';
 const ASSETS = [
   './',
   "./css/app.css",
@@ -27,6 +27,7 @@ const ASSETS = [
   "./js/calib/editor.js",
   "./js/calib/pattern.js",
   "./js/calib/photoroom.js",
+  "./js/calib/match.js",
   "./js/calib/ui.js",
   "./js/i18n.js",
   "./js/loaders/common.js",

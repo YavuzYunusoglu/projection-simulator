@@ -99,8 +99,10 @@ function buildTarget() {
   if (photo) {
     // re-light the photo: scale its ambient and projector layers by today's settings
     const c = photo.calib;
-    const kA = c.Ea0 > 0.5 ? L.Ea / c.Ea0 : 1;
-    const kP = c.Ep0 > 0 ? (L.Epw - L.Epb) / c.Ep0 : 1;
+    // clamp: a calibration that is off by a few times must not blow the picture out
+    const clampK = (k) => Math.min(20, Math.max(0.05, k));
+    const kA = clampK(c.Ea0 > 0.5 ? L.Ea / c.Ea0 : 1);
+    const kP = clampK(c.Ep0 > 0 ? (L.Epw - L.Epb) / c.Ep0 : 1);
     const q = photo.H;
     const cornersPx = UNIT.map(([u, v]) => applyH(q, u, v));
     const xs = cornersPx.map((pt) => pt[0]), ys = cornersPx.map((pt) => pt[1]);

@@ -70,7 +70,8 @@ export function fitSmooth(samples) {
 /**
  * @param photo  canvas of the calibration photo
  * @param quad   pattern corners (TL, TR, BR, BL) in photo pixels
- * @param isWhite (u, v) => true where the projected content was plain white (e.g. whiteMask)
+ * @param isWhite (u, v) => true where the projected content was plain white (e.g. whiteMask), or
+ *                null to rely on the photo's brightness alone
  * @param ratio  (ambient + black level) / projector white range, from the colour fit
  * @returns { amb, proj: canvases (sRGB-encoded linear light), w, h, quad (scaled), Yamb, Yproj }
  */
@@ -88,17 +89,33 @@ export function buildPhotoRoom(photo, quad, isWhite, ratio) {
   const white = isWhite;
   const lin = (k) => [LUT[data[k]], LUT[data[k + 1]], LUT[data[k + 2]]];
 
-  // sample the white background on a grid
-  const samples = [];
+  // brightness envelope: per cell of the picture, the level of its brightest pixels. Plain
+  // white background sits near it; text, pictures and dark slides fall well below.
   const [x0, y0, x1, y1] = [Math.min(...q.map((p) => p[0])), Math.min(...q.map((p) => p[1])), Math.max(...q.map((p) => p[0])), Math.max(...q.map((p) => p[1]))];
   const step = Math.max(2, Math.round((x1 - x0) / 140));
+  const G = 8;
+  const cells = Array.from({ length: G * G }, () => []);
+  const grid = [];
   for (let y = Math.max(0, Math.floor(y0)); y < Math.min(h, y1); y += step) {
     for (let x = Math.max(0, Math.floor(x0)); x < Math.min(w, x1); x += step) {
       const [u, v] = applyH(Hi, x + 0.5, y + 0.5);
-      if (!white(u, v)) continue;
-      samples.push({ u, v, rgb: lin((y * w + x) * 4) });
+      if (u < 0 || v < 0 || u > 1 || v > 1) continue;
+      const rgb = lin((y * w + x) * 4);
+      const Y = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+      const c = Math.min(G - 1, Math.floor(v * G)) * G + Math.min(G - 1, Math.floor(u * G));
+      cells[c].push(Y);
+      grid.push({ u, v, rgb, Y, c });
     }
   }
+  const cellTop = cells.map((a) => {
+    if (!a.length) return Infinity;
+    const s = [...a].sort((p, r) => p - r);
+    return s[Math.floor(s.length * 0.95)];
+  });
+  const globalTop = Math.max(...cellTop.filter(Number.isFinite), 1e-4);
+  const bright = (Y, c) => Y >= 0.85 * cellTop[c] && Y >= 0.35 * globalTop;
+  const samples = grid.filter((s) => bright(s.Y, s.c) && (!white || white(s.u, s.v)));
+  if (samples.length < 60) return { ok: false, reason: 'samples', samples: samples.length };
   const smooth = fitSmooth(samples);
 
   const amb = document.createElement('canvas');
@@ -116,7 +133,7 @@ export function buildPhotoRoom(photo, quad, isWhite, ratio) {
       if (inside) {
         const f = smooth(u, v);
         W = f;
-        if (white(u, v)) {
+        if (!white || white(u, v)) {
           const p = lin(k);
           // keep real texture unless the pixel is far off the fit (an object or a glitch)
           if (Math.abs(p[1] - f[1]) < 0.35 * Math.max(f[1], 1e-3)) W = p;
@@ -130,7 +147,15 @@ export function buildPhotoRoom(photo, quad, isWhite, ratio) {
   }
   amb.getContext('2d').putImageData(ai, 0, 0);
   proj.getContext('2d').putImageData(pi, 0, 0);
-  const c = smooth(0.5, 0.5);
-  const Y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-  return { amb, proj, w, h, quad: q, Yamb: Y * ka, Yproj: Y * kp, samples: samples.length };
+  // reference white: median over the white samples (robust against a bad centre)
+  const ys = samples.map((s) => { const f = smooth(s.u, s.v); return 0.2126 * f[0] + 0.7152 * f[1] + 0.0722 * f[2]; }).sort((a, b) => a - b);
+  const Y = ys[Math.floor(ys.length / 2)];
+  const room = { amb, proj, w, h, quad: q, Yamb: Y * ka, Yproj: Y * kp, samples: samples.length };
+  room.ok = roomUsable(room);
+  return room;
+}
+
+/** Guard against layers that would render as a blown-out or black picture. */
+export function roomUsable(r) {
+  return !!r && r.Yproj > 1e-3 && r.Yamb >= 0 && r.Yamb / r.Yproj <= 5 && (r.samples === undefined || r.samples >= 60);
 }

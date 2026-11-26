@@ -3,6 +3,7 @@
 import { store } from './state.js';
 import { getProfile, putProfile } from './store.js';
 import { squareToQuad } from './sim/homography.js';
+import { roomUsable } from './calib/photoroom.js';
 
 const WORKING_ID = 'working:photo';
 
@@ -42,7 +43,10 @@ export async function useBuiltRoom(room, calib, thumb) {
 
 /** Restore layers saved in a profile (or the working copy). */
 export async function setRoomPhoto(layers, calib, thumb = null, { persist = true } = {}) {
-  if (!layers || !layers.amb || !layers.proj || !calib || !calib.quad) { clearRoomPhoto(persist); return; }
+  if (!layers || !layers.amb || !layers.proj || !calib || !calib.quad || !roomUsable({ Yamb: calib.Yamb, Yproj: calib.Yproj })) {
+    clearRoomPhoto(persist);
+    return;
+  }
   try {
     const [amb, proj] = await Promise.all([blobToCanvas(layers.amb), blobToCanvas(layers.proj)]);
     install(amb, proj, calib, layers, thumb);
