@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en" data-theme-pref="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Projection Simulator</title>
+  <meta name="description" content="Preview how your slides will look on a classroom projector: ambient light, contrast, colour cast, overflow, keystone and back-row readability.">
+  <meta name="theme-color" content="#F3F1EC" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#141412" media="(prefers-color-scheme: dark)">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/app.css">
+  <script>
+    // Apply theme before first paint to avoid a flash.
+    (function () {
+      var pref = 'system';
+      try { pref = localStorage.getItem('projsim.theme') || 'system'; } catch (e) {}
+      var dark = pref === 'dark' || (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      document.documentElement.dataset.themePref = pref;
+    })();
+  </script>
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-logo" viewBox="0 0 24 24"><rect x="2.5" y="8" width="13" height="9" rx="1.5"/><circle cx="9" cy="12.5" r="2.4"/><path d="M15.5 10.5 21.5 7v11l-6-3.5"/></symbol>
+      <symbol id="i-room" viewBox="0 0 24 24"><path d="M3 4h18M3 20h18"/><rect x="6" y="6.5" width="9" height="7"/><rect x="17" y="8" width="4" height="8"/></symbol>
+      <symbol id="i-screen" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12"/><path d="M12 17v3M8 20h8"/></symbol>
+      <symbol id="i-compare" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14"/><path d="M12 3v18"/><path d="M8 10l-2 2 2 2M16 10l2 2-2 2"/></symbol>
+      <symbol id="i-safe" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" stroke-dasharray="2.5 2"/><rect x="7" y="8.5" width="10" height="7"/></symbol>
+      <symbol id="i-heat" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14"/><path d="M3 12h18M9 5v14M15 5v14"/><path d="M15 12h6v7h-6z" fill="currentColor" stroke="none" opacity=".55"/><path d="M9 5h6v7H9z" fill="currentColor" stroke="none" opacity=".3"/></symbol>
+      <symbol id="i-target" viewBox="0 0 24 24"><path d="M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5"/><circle cx="12" cy="12" r="3"/></symbol>
+      <symbol id="i-open" viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4 14v6h16v-6"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/></symbol>
+      <symbol id="i-auto" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
+      <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol>
+      <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"/></symbol>
+      <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+      <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4 20h16"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+      <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+      <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3 2 20h20z"/><path d="M12 10v4.5M12 17v.5"/></symbol>
+      <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14"/><circle cx="9" cy="10" r="1.6"/><path d="M3 17l5-4 4 3 3-2 6 4"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l11-7z"/></symbol>
+      <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/></symbol>
+    </defs>
+  </svg>
+
+  <header class="bar">
+    <div class="brand">
+      <svg class="ic brand-ic"><use href="#i-logo"/></svg>
+      <span class="brand-name" data-i18n="app.name">Projection Simulator</span>
+    </div>
+
+    <div class="bar-group profile-group">
+      <label class="sr-only" for="profileSelect" data-i18n="profiles.label">Profile</label>
+      <div class="select-wrap">
+        <select id="profileSelect"></select>
+        <svg class="ic"><use href="#i-chev"/></svg>
+      </div>
+      <span class="dirty-dot" id="dirtyDot" hidden data-i18n-title="profiles.unsaved" title="Unsaved changes"></span>
+      <button class="btn icon" id="saveProfileBtn" data-i18n-title="profiles.save" title="Save profile"><svg class="ic"><use href="#i-save"/></svg></button>
+      <button class="btn icon" id="manageProfilesBtn" data-i18n-title="profiles.manage" title="Manage profiles"><svg class="ic"><use href="#i-list"/></svg></button>
+    </div>
+
+    <div class="bar-group view-group">
+      <div class="seg" role="radiogroup" data-i18n-aria="view.label" aria-label="View">
+        <button role="radio" data-view="room" aria-checked="true"><svg class="ic"><use href="#i-room"/></svg><span data-i18n="view.room">Room</span></button>
+        <button role="radio" data-view="screen" aria-checked="false"><svg class="ic"><use href="#i-screen"/></svg><span data-i18n="view.screen">Screen</span></button>
+      </div>
+      <button class="btn toggle" id="compareBtn" aria-pressed="false" data-i18n-title="view.compareHint" title="Compare with the original"><svg class="ic"><use href="#i-compare"/></svg><span data-i18n="view.compare">Compare</span></button>
+      <button class="btn toggle" id="safeBtn" aria-pressed="true" data-i18n-title="view.safeHint" title="Show safe zone"><svg class="ic"><use href="#i-safe"/></svg><span data-i18n="view.safe">Safe zone</span></button>
+      <button class="btn toggle" id="heatBtn" aria-pressed="false" data-i18n-title="view.heatHint" title="Mark hard-to-read areas"><svg class="ic"><use href="#i-heat"/></svg><span data-i18n="view.heat">Problems</span></button>
+    </div>
+
+    <div class="bar-group end">
+      <button class="btn" id="calibrateBtn"><svg class="ic"><use href="#i-target"/></svg><span data-i18n="calib.open">Calibrate</span></button>
+      <button class="btn primary" id="openBtn"><svg class="ic"><use href="#i-open"/></svg><span data-i18n="file.open">Open slides</span></button>
+      <input type="file" id="fileInput" accept=".png,.jpg,.jpeg,.webp,.pdf,.pptx,image/png,image/jpeg,image/webp,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation" multiple hidden>
+      <button class="btn icon lang" id="langBtn" data-i18n-title="ui.language" title="Language"><span id="langLabel">TR</span></button>
+      <button class="btn icon" id="themeBtn" data-i18n-title="ui.theme" title="Theme"><svg class="ic"><use id="themeIcon" href="#i-auto"/></svg></button>
+      <button class="btn icon" id="aboutBtn" data-i18n-title="about.title" title="About"><svg class="ic"><use href="#i-info"/></svg></button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="slides" id="slidesPanel" data-i18n-aria="slides.label" aria-label="Slides">
+      <ol class="slide-list" id="slideList"></ol>
+    </aside>
+
+    <section class="stage" id="stage">
+      <div class="stage-frame" id="stageFrame">
+        <canvas id="glCanvas"></canvas>
+        <canvas id="overlayCanvas" aria-hidden="true"></canvas>
+        <div class="compare-ui" id="compareUi" hidden>
+          <span class="cmp-label left" data-i18n="view.laptop">On your laptop</span>
+          <span class="cmp-label right" data-i18n="view.projected">Projected</span>
+          <div class="cmp-handle" id="cmpHandle" role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" data-i18n-aria="view.compare" aria-label="Compare"><span></span></div>
+        </div>
+        <div class="drop" id="dropZone">
+          <div class="drop-inner">
+            <div class="drop-art" aria-hidden="true">
+              <span class="beam"></span>
+              <svg class="ic"><use href="#i-logo"/></svg>
+            </div>
+            <h1 data-i18n="empty.title">See your slides the way the back row will.</h1>
+            <p data-i18n="empty.body">Drop a PDF, PowerPoint or image here. Nothing is uploaded — everything stays in this browser.</p>
+            <div class="drop-actions">
+              <button class="btn primary" id="dropOpenBtn"><svg class="ic"><use href="#i-open"/></svg><span data-i18n="file.open">Open slides</span></button>
+              <button class="btn" id="sampleBtn"><svg class="ic"><use href="#i-play"/></svg><span data-i18n="file.sample">Try a sample slide</span></button>
+            </div>
+            <p class="drop-formats">PDF · PPTX · PNG · JPG</p>
+          </div>
+        </div>
+        <div class="drag-veil" id="dragVeil" hidden><span data-i18n="file.dropHere">Drop to load</span></div>
+        <div class="busy" id="busy" hidden><span class="busy-bar"></span><span id="busyText"></span></div>
+        <div class="slide-badges" id="slideBadges"></div>
+      </div>
+      <div class="readout" id="readout"></div>
+    </section>
+
+    <aside class="panel" id="panel" data-i18n-aria="panel.label" aria-label="Settings">
+      <div id="controls"></div>
+      <section class="card findings" id="findings">
+        <h2 data-i18n="find.title">What to fix</h2>
+        <div id="findingsBody"></div>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="foot">
+    <span data-i18n="about.footer">Built with AI assistance (Claude by Anthropic). A simulation, not a measurement.</span>
+    <a href="https://github.com/yavuzyunusoglu/projection-simulator" target="_blank" rel="noopener">GitHub</a>
+  </footer>
+
+  <!-- Calibration -->
+  <dialog class="dlg wide" id="calibDlg">
+    <div class="dlg-head">
+      <h2 data-i18n="calib.title">Calibrate from a photo</h2>
+      <button class="btn icon" data-close data-i18n-title="ui.close" title="Close"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="pattern" data-i18n="calib.tabPattern">Test pattern</button>
+      <button role="tab" aria-selected="false" data-tab="photo" data-i18n="calib.tabPhoto">Any photo</button>
+    </div>
+    <div class="calib-body">
+      <div class="calib-steps" id="calibSteps"></div>
+      <div class="calib-work">
+        <div class="editor" id="calibEditor">
+          <canvas id="calibCanvas"></canvas>
+          <canvas id="loupe" class="loupe" width="132" height="132" hidden></canvas>
+          <div class="editor-empty" id="calibEmpty">
+            <svg class="ic"><use href="#i-image"/></svg>
+            <span data-i18n="calib.noPhoto">No photo yet</span>
+          </div>
+        </div>
+        <div class="legend" id="calibLegend">
+          <span class="lg proj" data-i18n="calib.projQuad">Projected image</span>
+          <span class="lg scr" data-i18n="calib.screenQuad">Screen surface</span>
+          <span class="calib-status" id="calibStatus" role="status"></span>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Profiles -->
+  <dialog class="dlg" id="profilesDlg">
+    <div class="dlg-head">
+      <h2 data-i18n="profiles.manage">Manage profiles</h2>
+      <button class="btn icon" data-close data-i18n-title="ui.close" title="Close"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <p class="muted small" data-i18n="profiles.localNote">Profiles are stored only in this browser. Export them to share with colleagues.</p>
+    <ul class="profile-list" id="profileList"></ul>
+    <div class="dlg-actions">
+      <button class="btn" id="importProfileBtn"><svg class="ic"><use href="#i-open"/></svg><span data-i18n="profiles.import">Import</span></button>
+      <input type="file" id="importInput" accept=".json,application/json" hidden>
+      <button class="btn" id="exportAllBtn"><svg class="ic"><use href="#i-down"/></svg><span data-i18n="profiles.exportAll">Export all</span></button>
+    </div>
+  </dialog>
+
+  <!-- Save profile -->
+  <dialog class="dlg narrow" id="saveDlg">
+    <form method="dialog" id="saveForm">
+      <div class="dlg-head">
+        <h2 data-i18n="profiles.save">Save profile</h2>
+      </div>
+      <label class="field">
+        <span data-i18n="profiles.name">Name</span>
+        <input type="text" id="saveName" required maxlength="60" autocomplete="off">
+      </label>
+      <label class="check" id="overwriteRow" hidden>
+        <input type="checkbox" id="saveOverwrite" checked>
+        <span data-i18n="profiles.overwrite">Update the current profile</span>
+      </label>
+      <div class="dlg-actions">
+        <button class="btn" value="cancel" formnovalidate data-i18n="ui.cancel">Cancel</button>
+        <button class="btn primary" value="ok" data-i18n="ui.save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- About -->
+  <dialog class="dlg" id="aboutDlg">
+    <div class="dlg-head">
+      <h2 data-i18n="about.title">About</h2>
+      <button class="btn icon" data-close data-i18n-title="ui.close" title="Close"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="prose" id="aboutBody"></div>
+  </dialog>
+
+  <!-- Full-screen test pattern -->
+  <div class="pattern" id="patternView" hidden>
+    <canvas id="patternCanvas"></canvas>
+    <div class="pattern-hint" id="patternHint" data-i18n="calib.patternHint">Photograph the screen, then press Esc or click to close.</div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
