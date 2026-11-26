@@ -1,7 +1,12 @@
 // Application state: simulation parameters, presets and a tiny pub/sub store.
 
 export const DEFAULT_PARAMS = {
-  room: { ambientLux: 200, ambientColor: 'daylight' },
+  room: {
+    ambientLux: 200,
+    ambientColor: 'daylight',
+    layout: { surface: 'screen', board: 'right', window: 'left', desk: 'none' },
+    wallColor: null, // linear RGB albedo measured from a calibration photo
+  },
   projector: {
     lumens: 3000,
     lampHealth: 60,
@@ -22,7 +27,9 @@ export const DEFAULT_PARAMS = {
     rotation: -0.6,
     corners: null,
   },
-  viewer: { distance: 7, acuity: 1.2 },
+  viewer: { distance: 7, acuity: 1.3 },
+  // photo calibration: { quad, aspect, ratio, Ea0, Ep0, w, h } — the photo itself lives in IndexedDB
+  calib: null,
 };
 
 const clone = (o) => JSON.parse(JSON.stringify(o));

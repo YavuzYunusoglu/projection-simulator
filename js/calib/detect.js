@@ -196,21 +196,68 @@ export function patternHomography(markers, aspect) {
 }
 
 /**
- * Estimate where the screen's edges are, from brightness profiles across the white bands of
- * the pattern (the black screen border or the darker wall produce a drop).
- * Returns screen corners in pattern uv (may extend past 0..1 when not visible).
+ * Find the pattern's aspect ratio (unknown when the pattern is shown on another device or as
+ * a downloaded image) by minimising the marker reprojection error over a continuous range.
+ * More markers explained beats a slightly lower residual. `hint` (e.g. the window aspect
+ * when the pattern was shown in this browser) is preferred when the fit cannot tell.
+ * @returns {aspect, H, markers, err} or null
+ */
+export function fitPatternAspect(g, w, h, found, hint = null) {
+  if (found.length < 2) return null;
+  const evalAt = (a) => {
+    const ms = recoverMarkers(g, w, h, found, a);
+    const H = patternHomography(ms, a);
+    if (!H) return null;
+    const L = patternLayout(a);
+    let err = 0, n = 0;
+    for (const m of ms) {
+      markerCorners(L.markers[m.id]).forEach((p, i) => {
+        const q = applyH(H, ...p);
+        err += Math.hypot(q[0] - m.corners[i][0], q[1] - m.corners[i][1]);
+        n++;
+      });
+    }
+    return { aspect: a, H, markers: ms, err: err / n };
+  };
+  const better = (a, b) => !b || a.markers.length > b.markers.length || (a.markers.length === b.markers.length && a.err < b.err);
+  let best = null;
+  for (let a = 1.0; a <= 2.4001; a += 0.02) {
+    const r = evalAt(a);
+    if (r && better(r, best)) best = r;
+  }
+  if (!best) return null;
+  const c = best.aspect;
+  for (let a = c - 0.02; a <= c + 0.02001; a += 0.002) {
+    const r = evalAt(a);
+    if (r && better(r, best)) best = r;
+  }
+  // With few markers the residual is flat; fall back to the hint when it fits about as well.
+  if (hint) {
+    const r = evalAt(hint);
+    if (r && r.markers.length >= best.markers.length && r.err <= best.err + 0.6) best = r;
+  }
+  return best;
+}
+
+/**
+ * Look for the projection surface's edges along white bands of the pattern, extended past the
+ * pattern on both sides. A screen edge is either a clear drop inside the projected image (the
+ * picture spills onto a darker wall) or a narrow dark dip (a screen's black border) anywhere.
+ * A gradual fall-off outside the picture (projector black bars, unlit wall) is not an edge.
+ * @returns { corners: screen corners in pattern uv, found: {left,right,top,bottom}, surface }
  */
 export function estimateScreenInPattern(g, w, h, Hpat, aspect) {
   const L = patternLayout(aspect);
-  const N = 240;
+  const N = 480, lo = -0.6, hi = 1.6;
+  const pos = (i) => lo + ((i + 0.5) / N) * (hi - lo);
   const prof = (fn) => {
     const out = new Float32Array(N);
     for (let i = 0; i < N; i++) {
       let s = 0, n = 0;
       for (let k = 0; k < 7; k++) {
-        const [u, v] = fn((i + 0.5) / N, k / 6);
+        const [u, v] = fn(pos(i), k / 6);
         const [x, y] = applyH(Hpat, u, v);
-        if (x < 0 || y < 0 || x >= w - 1 || y >= h - 1) continue;
+        if (!(x >= 0 && y >= 0 && x < w - 1 && y < h - 1)) continue;
         s += sampleBilinear(g, w, h, x, y); n++;
       }
       out[i] = n ? s / n : NaN;
@@ -219,18 +266,68 @@ export function estimateScreenInPattern(g, w, h, Hpat, aspect) {
   };
   const horiz = prof((t, k) => [t, L.bandH[0] + (L.bandH[1] - L.bandH[0]) * k]);
   const vert = prof((t, k) => [L.bandV[0] + (L.bandV[1] - L.bandV[0]) * k, t]);
+  const idx = (t) => Math.round(((t - lo) / (hi - lo)) * N - 0.5);
+  const win = Math.max(3, Math.round(N * 0.03 / (hi - lo)));
+
   const edge = (p, dir) => {
-    const mid = Math.floor(N / 2);
-    const ref = median(Array.from(p.slice(mid - 20, mid + 20)).filter((v) => !isNaN(v)));
-    if (!ref) return dir > 0 ? 1 : 0;
+    const mid = idx(0.5);
+    const ref = median(Array.from(p.slice(mid - 30, mid + 30)).filter((v) => !isNaN(v)));
+    const inside = (i) => (dir > 0 ? pos(i) <= 1 : pos(i) >= 0);
+    if (!ref) return null;
     for (let i = mid; i >= 0 && i < N; i += dir) {
-      if (isNaN(p[i])) return (i - dir + 0.5) / N;
-      if (p[i] < ref * 0.62) return (i + (dir > 0 ? 0 : 1)) / N;
+      if (isNaN(p[i])) return null;
+      // a screen is rarely much larger than the picture: don't wander off to other objects
+      if (pos(i) < -0.3 || pos(i) > 1.3) return null;
+      // 1) clear drop while still inside the projected picture
+      if (inside(i) && p[i] < ref * 0.62) return { at: pos(i - dir * 0.5), inside: true };
+      // 2) narrow dark dip (screen border), inside or outside the picture
+      let before = 0, after = 0;
+      for (let k = 1; k <= win * 2; k++) {
+        const a = p[i - dir * k], b = p[i + dir * k];
+        if (!isNaN(a)) before = Math.max(before, a);
+        if (!isNaN(b) && k <= win * 4) after = Math.max(after, b);
+      }
+      if (before && after && p[i] < before * 0.5 && p[i] < after * 0.72) {
+        // walk back to where the fall started
+        let j = i;
+        while (j - dir >= 0 && j - dir < N && p[j - dir] < before * 0.8) j -= dir;
+        return { at: pos(j - dir * 0.5), inside: inside(j) };
+      }
+      if (!inside(i) && p[i] < ref * 0.12) return null; // ran into darkness: nothing more to see
     }
-    return dir > 0 ? 1 : 0;
+    return null;
   };
-  const x0 = edge(horiz, -1), x1 = edge(horiz, 1), y0 = edge(vert, -1), y1 = edge(vert, 1);
-  return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  const raw = { left: edge(horiz, -1), right: edge(horiz, 1), top: edge(vert, -1), bottom: edge(vert, 1) };
+  // An edge inside the picture is convincing on its own (the picture spills over). An edge
+  // outside it only counts when the opposite side shows one too (a frame around the picture);
+  // a lone dark line above or beside the picture is usually something else (a rolled-up screen,
+  // a cable channel, a door frame).
+  const keep = (a, b) => (raw[a] && (raw[a].inside || (raw[b] && !raw[b].inside)) ? raw[a].at : null);
+  const e = { left: keep('left', 'right'), right: keep('right', 'left'), top: keep('top', 'bottom'), bottom: keep('bottom', 'top') };
+  const found = Object.fromEntries(Object.entries(e).map(([k, v]) => [k, v !== null]));
+  const x0 = e.left ?? 0, x1 = e.right ?? 1, y0 = e.top ?? 0, y1 = e.bottom ?? 1;
+  const any = found.left || found.right || found.top || found.bottom;
+  return { corners: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], found, surface: any ? 'screen' : 'wall' };
+}
+
+/** Median colour (linear RGB) of the wall around the projected picture, in pattern uv rings. */
+export function sampleWallColor(rgba, w, h, Hpat) {
+  const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  const pts = [];
+  for (const u of [-0.55, -0.45, -0.38, 1.38, 1.45, 1.55]) {
+    for (let v = 0.15; v <= 0.85; v += 0.1) pts.push([u, v]);
+  }
+  for (const v of [-0.35, -0.28]) for (let u = 0.1; u <= 0.9; u += 0.1) pts.push([u, v]);
+  const rs = [], gs = [], bs = [];
+  for (const [u, v] of pts) {
+    const [x, y] = applyH(Hpat, u, v);
+    const xi = Math.round(x), yi = Math.round(y);
+    if (xi < 0 || yi < 0 || xi >= w || yi >= h) continue;
+    const k = (yi * w + xi) * 4;
+    rs.push(lin(rgba[k])); gs.push(lin(rgba[k + 1])); bs.push(lin(rgba[k + 2]));
+  }
+  if (rs.length < 6) return null;
+  return [median(rs), median(gs), median(bs)];
 }
 
 function median(a) {

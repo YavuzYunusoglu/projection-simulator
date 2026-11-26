@@ -1,15 +1,34 @@
 // Layout of the virtual classroom wall (metres, origin at the screen centre, y down).
-export function roomLayout(sw, sh) {
+const FAR = [1e4, 1e4, 1e4 + 1, 1e4 + 1];
+export const DEFAULT_LAYOUT = { surface: 'screen', board: 'right', window: 'left', desk: 'none' };
+
+export function roomLayout(sw, sh, layout = DEFAULT_LAYOUT) {
+  const L = { ...DEFAULT_LAYOUT, ...(layout || {}) };
   const hw = sw / 2, hh = sh / 2;
-  const wbX0 = hw + 0.14;
-  const wb = [wbX0, -0.05, wbX0 + Math.max(1.6, sw * 1.05), 1.15];
-  const winX1 = -hw - 0.55;
-  const win = [winX1 - 1.1, -hh - 0.05, winX1, hh + 0.4];
+  const bw = Math.max(1.6, sw * 1.05);
+  let wb = FAR;
+  if (L.board === 'right') wb = [hw + 0.14, -0.05, hw + 0.14 + bw, 1.15];
+  if (L.board === 'left') wb = [-hw - 0.14 - bw, -0.05, -hw - 0.14, 1.15];
+  let win = FAR;
+  if (L.window !== 'none') {
+    const sameSide = L.window === L.board;
+    const gap = sameSide ? 0.14 + bw + 0.4 : 0.55;
+    win = L.window === 'left'
+      ? [-hw - gap - 1.1, -hh - 0.05, -hw - gap, hh + 0.4]
+      : [hw + gap, -hh - 0.05, hw + gap + 1.1, hh + 0.4];
+  }
   const ceil = -hh - 0.32;
-  const trunk = Math.max(hh + 0.5, wb[3] + 0.2);
+  const trunk = Math.max(hh + 0.5, (wb === FAR ? 1.15 : wb[3]) + 0.2);
   const floor = Math.max(trunk + 0.7, hh + 1.15);
+  // a teacher's desk standing in front of the wall
+  let desk = FAR;
+  if (L.desk !== 'none') {
+    const top = floor - (L.desk === 'high' ? 1.05 : 0.76);
+    const dw = Math.max(1.4, sw * 0.7);
+    desk = [-dw / 2, top, dw / 2, floor + 0.02];
+  }
   return {
-    wb, win, ceil, trunk, floor,
+    wb, win, ceil, trunk, floor, desk, wall: L.surface === 'wall',
     room: [-hw - 1.5, ceil - 0.12, hw + 1.5, trunk + 0.3],
     screen: [-hw - 0.12, -hh - 0.2, hw + 0.12, hh + 0.1],
   };

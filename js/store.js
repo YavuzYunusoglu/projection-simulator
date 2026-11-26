@@ -39,7 +39,7 @@ export const isPersistent = async () => !!(await open());
 
 export async function listProfiles() {
   const all = await tx('readonly', (s) => (s ? req(s.getAll()) : [...memory.values()]));
-  return (all || []).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  return (all || []).filter((p) => !String(p.id).startsWith('working:')).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 }
 
 export async function getProfile(id) {

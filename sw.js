@@ -1,5 +1,7 @@
 // Offline support for the app shell and libraries.
-const VERSION = 'projsim-v2';
+// Network first: online visitors always get the latest deploy (no mix of old and new modules);
+// the cache is only a fallback when offline.
+const VERSION = 'projsim-v3';
 const ASSETS = [
   './',
   "./css/app.css",
@@ -24,6 +26,7 @@ const ASSETS = [
   "./js/calib/detect.js",
   "./js/calib/editor.js",
   "./js/calib/pattern.js",
+  "./js/calib/photoroom.js",
   "./js/calib/ui.js",
   "./js/i18n.js",
   "./js/loaders/common.js",
@@ -32,6 +35,7 @@ const ASSETS = [
   "./js/loaders/pptx.js",
   "./js/loaders/sample.js",
   "./js/main.js",
+  "./js/photoview.js",
   "./js/sim/analysis.js",
   "./js/sim/homography.js",
   "./js/sim/photometry.js",
@@ -45,11 +49,11 @@ const ASSETS = [
   "./js/theme.js",
   "./js/ui/controls.js",
   "./js/ui/findings.js",
-  "./js/ui/fullscreen.js",
   "./js/ui/motion.js",
   "./js/ui/overlay.js",
   "./js/ui/profiles.js",
   "./js/ui/slides.js",
+  "./js/ui/stagebar.js",
   "./locales/en.js",
   "./locales/tr.js",
   "./manifest.webmanifest",
@@ -70,21 +74,20 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// Stale-while-revalidate: answer from the cache, refresh it in the background so the
-// next visit picks up a new deploy.
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
-  e.respondWith(caches.open(VERSION).then(async (cache) => {
-    const hit = await cache.match(req, { ignoreSearch: true });
-    const net = fetch(req).then((res) => {
+  e.respondWith((async () => {
+    const cache = await caches.open(VERSION);
+    try {
+      const res = await fetch(req, { cache: 'no-cache' });
       if (res.ok) cache.put(req, res.clone());
       return res;
-    }).catch(() => null);
-    if (hit) { e.waitUntil(net); return hit; }
-    const res = await net;
-    if (res) return res;
-    if (req.mode === 'navigate') return (await cache.match('./index.html')) || Response.error();
-    return Response.error();
-  }));
+    } catch {
+      const hit = await cache.match(req, { ignoreSearch: true });
+      if (hit) return hit;
+      if (req.mode === 'navigate') return (await cache.match('./index.html')) || Response.error();
+      return Response.error();
+    }
+  })());
 });

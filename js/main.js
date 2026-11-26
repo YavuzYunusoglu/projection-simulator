@@ -1,12 +1,12 @@
 import { store } from './state.js';
 import { t, num, applyI18n, setLang, getLang, onLang } from './i18n.js';
-import { cycleTheme, getThemePref, onTheme, cssVar } from './theme.js';
+import { setThemePref, getThemePref, onTheme, cssVar } from './theme.js';
 import { computeScene } from './sim/scene.js';
 import { SimRenderer } from './sim/renderer.js';
-import { solveHomography, invertH } from './sim/homography.js';
+import { solveHomography, invertH, applyH } from './sim/homography.js';
 import { roomLayout, fitCamera, viewerCamera } from './sim/room.js';
 import { analyze, lumaPlane, downsample2 } from './sim/analysis.js';
-import { buildControls } from './ui/controls.js';
+import { buildControls, CHECK_SECTIONS, SETUP_SECTIONS } from './ui/controls.js';
 import { Overlay } from './ui/overlay.js';
 import { renderReadout, renderFindings } from './ui/findings.js';
 import { renderSlideList, markCurrent, selectSlide, loadFiles, setSlides } from './ui/slides.js';
@@ -14,7 +14,8 @@ import { initProfiles } from './ui/profiles.js';
 import { reducedMotion, toast, wireDialog } from './ui/motion.js';
 import { sampleSlide } from './loaders/sample.js';
 import { initCalibration } from './calib/ui.js';
-import { initFullscreen, toggleFullscreen } from './ui/fullscreen.js';
+import { initStageBar, toggleFullscreen } from './ui/stagebar.js';
+import { restoreRoomPhoto } from './photoview.js';
 
 const $ = (id) => document.getElementById(id);
 const UNIT = [[0, 0], [1, 0], [1, 1], [0, 1]];
@@ -48,18 +49,30 @@ function srgbOf(cssColor) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => v / 255);
 }
 
+// Wall albedo: measured colour (if any) scaled to a typical painted-wall reflectance.
+function wallAlbedo(c) {
+  if (!c) return [0.8, 0.795, 0.78];
+  const y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] || 1;
+  // the photo's wall is lit by (usually warm) room light and white-balanced by the camera:
+  // keep only part of its tint
+  return c.map((v) => Math.min(1, (1 + 0.45 * (v / y - 1)) * 0.78));
+}
+
 function buildTarget() {
   const slide = store.state.slides[store.state.current];
   const p = store.state.params;
   const sw = slide ? slide.width : 1920, sh = slide ? slide.height : 1080;
   scene = computeScene(p, sw, sh);
   const L = scene.light;
-  const room = roomLayout(scene.screenW, scene.screenH);
+  const room = roomLayout(scene.screenW, scene.screenH, p.room.layout);
   const canvas = $('glCanvas');
   const aspect = canvas.width / Math.max(1, canvas.height);
-  const cam = store.state.view === 'room'
-    ? viewerCamera(p.viewer.distance, aspect, room.screen, scene.cornersM)
-    : fitCamera(room.screen, aspect, 0.04, scene.cornersM);
+  const photo = store.state.view === 'photo' ? store.state.photo : null;
+  const cam = photo
+    ? fitCamera([0, 0, photo.w, photo.h], aspect, 0.01)
+    : store.state.view === 'room'
+      ? viewerCamera(p.viewer.distance, aspect, room.screen, scene.cornersM)
+      : fitCamera(room.screen, aspect, 0.04, scene.cornersM);
   const proj = p.projector.colorMatrix
     ? p.projector.colorMatrix
     : [L.tint[0], 0, 0, 0, L.tint[1], 0, 0, 0, L.tint[2]];
@@ -78,9 +91,35 @@ function buildTarget() {
     sigma: scene.blur.sigma, cam, room: store.state.view === 'room' ? 1 : 0,
     curtain: 1 - Math.min(1, Math.max(0, Math.log10(lux + 1) / Math.log10(900))),
     screenW: scene.screenW, screenH: scene.screenH, gain: L.gain,
-    wb: room.wb, win: room.win, ceil: room.ceil, trunk: room.trunk, floor: room.floor,
+    wb: room.wb, win: room.win, ceil: room.ceil, trunk: room.trunk, floor: room.floor, desk: room.desk,
+    wallAlb: wallAlbedo(p.room.wallColor), surface: room.wall ? 1 : 0,
     slideAspect: scene.aspect,
+    center: [0, 0],
   };
+  if (photo) {
+    // re-light the photo: scale its ambient and projector layers by today's settings
+    const c = photo.calib;
+    const kA = c.Ea0 > 0.5 ? L.Ea / c.Ea0 : 1;
+    const kP = c.Ep0 > 0 ? (L.Epw - L.Epb) / c.Ep0 : 1;
+    const q = photo.H;
+    const cornersPx = UNIT.map(([u, v]) => applyH(q, u, v));
+    const xs = cornersPx.map((pt) => pt[0]), ys = cornersPx.map((pt) => pt[1]);
+    Object.assign(target, {
+      photoMode: 1, photoSize: [photo.w, photo.h], kA, kP,
+      photoRef: Math.max(1e-4, (photo.Yamb * kA + photo.Yproj * kP) / 0.96),
+      adapt: [1, 1, 1],
+      screenW: Math.max(...xs) - Math.min(...xs), screenH: Math.max(...ys) - Math.min(...ys),
+      center: [(Math.max(...xs) + Math.min(...xs)) / 2, (Math.max(...ys) + Math.min(...ys)) / 2],
+    });
+  } else target.photoMode = 0;
+  // the camera jumps between metres and photo pixels: don't tween across that
+  if (current && current.photoMode !== target.photoMode) {
+    current.cam = [...target.cam];
+    current.center = [...target.center];
+    current.screenW = target.screenW;
+    current.screenH = target.screenH;
+    current.photoMode = target.photoMode;
+  }
   if (!current) current = JSON.parse(JSON.stringify(target));
   const tag = $('viewTag');
   tag.hidden = store.state.view !== 'room' || !slide;
@@ -88,10 +127,14 @@ function buildTarget() {
   kick();
 }
 
+// switches, not quantities: never interpolate these
+const DISCRETE = new Set(['photoMode', 'surface', 'room']);
+
 function lerpInto(cur, tgt, k) {
   let moving = false;
   for (const key of Object.keys(tgt)) {
     const tv = tgt[key];
+    if (DISCRETE.has(key)) { cur[key] = tv; continue; }
     if (Array.isArray(tv)) {
       if (!Array.isArray(cur[key]) || cur[key].length !== tv.length) { cur[key] = [...tv]; continue; }
       for (let i = 0; i < tv.length; i++) {
@@ -123,7 +166,7 @@ function frame(now) {
   const moving = lerpInto(current, target, k);
   const corners = [];
   for (let i = 0; i < 4; i++) corners.push([current.corners[2 * i], current.corners[2 * i + 1]]);
-  const H = solveHomography(UNIT, corners);
+  const H = current.photoMode && store.state.photo ? store.state.photo.H : solveHomography(UNIT, corners);
   const Hinv = H && invertH(H);
   if (!Hinv) return;
   const warm = warmFactor(now);
@@ -167,9 +210,13 @@ function runAnalysis() {
   if (!renderer || !slideImage || !target || !lastU) return;
   const W = 1920, Hh = Math.round(W / scene.aspect);
   const H = solveHomography(UNIT, chunk(target.corners));
-  const sim = renderer.readSlideSpace({ ...lastU, ...target, H, Hinv: invertH(H), warm: 1 }, W, Hh);
-  if (!sim) return;
+  const base = { ...lastU, ...target, photoMode: 0, H, Hinv: invertH(H), warm: 1 };
+  const sim = renderer.readSlideSpace(base, W, Hh);
+  // contrast is judged without the viewer's blur (that is measured separately)
+  const sharpPx = renderer.readSlideSpace({ ...base, sigma: 0 }, W, Hh);
+  if (!sim || !sharpPx) return;
   const ds = downsample2(sim, W, Hh);
+  const dsSharp = downsample2(sharpPx, W, Hh);
   if (!origLuma || origLuma.w !== ds.w) {
     const c = document.createElement('canvas');
     c.width = ds.w; c.height = ds.h;
@@ -178,14 +225,28 @@ function runAnalysis() {
     g.drawImage(slideImage, 0, 0, ds.w, ds.h);
     origLuma = { w: ds.w, h: ds.h, data: lumaPlane(g.getImageData(0, 0, ds.w, ds.h).data, ds.w, ds.h) };
   }
-  analysis = analyze(origLuma.data, lumaPlane(ds.data, ds.w, ds.h), ds.w, ds.h, scene.visible, 24);
+  analysis = analyze(origLuma.data, lumaPlane(ds.data, ds.w, ds.h), ds.w, ds.h, scene.isVisible, 24, lumaPlane(dsSharp.data, ds.w, ds.h));
   updatePanels();
   kick();
 }
 const chunk = (a) => [[a[0], a[1]], [a[2], a[3]], [a[4], a[5]], [a[6], a[7]]];
 
+function roomSummary(p) {
+  const parts = [];
+  parts.push(t(p.room.layout && p.room.layout.surface === 'wall' ? 'layout.wall' : 'layout.screen'));
+  parts.push(`${num(p.projector.lumens * p.projector.lampHealth / 100)} lm`);
+  parts.push(`${num(p.room.ambientLux)} lx`);
+  if (p.calib) parts.push(t('calib.calibrated'));
+  return parts.join(' · ');
+}
+
 function updatePanels() {
   const slide = store.state.slides[store.state.current];
+  const p = store.state.params;
+  $('roomSummary').textContent = roomSummary(p);
+  $('calibSummary').textContent = p.calib
+    ? t('calib.summaryOn', { surface: t(p.room.layout.surface === 'wall' ? 'layout.wall' : 'layout.screen').toLowerCase(), c: p.calib.contrast ? num(p.calib.contrast, 1) + ':1' : '—' })
+    : t('calib.summaryOff');
   renderReadout($('readout'), slide ? scene : null, store.state.params);
   renderFindings($('findingsBody'), scene, store.state.params, analysis, slide);
   // badges: only touch the DOM when the set (or language) changed
@@ -237,15 +298,53 @@ store.subscribe((what) => {
   if (what === 'profile') overlay.revealSafe();
 });
 
-// ---------- Top bar ----------
-for (const b of document.querySelectorAll('.seg [data-view]')) {
+// ---------- Stage toolbar ----------
+for (const b of document.querySelectorAll('#viewSeg [data-view]')) {
   b.addEventListener('click', () => {
     store.state.view = b.dataset.view;
-    document.querySelectorAll('.seg [data-view]').forEach((x) => x.setAttribute('aria-checked', String(x === b)));
+    store.emit('view');
     buildTarget();
   });
 }
-document.querySelectorAll('.seg [data-view]').forEach((x) => x.setAttribute('aria-checked', String(x.dataset.view === store.state.view)));
+
+store.subscribe((what) => {
+  if (what !== 'photo') return;
+  if (renderer) renderer.setPhotoRoom(store.state.photo);
+  if (store.state.photo && store.state.view !== 'photo' && photoJustSet) { store.state.view = 'photo'; store.emit('view'); }
+  photoJustSet = false;
+  buildTarget();
+  updatePanels();
+});
+let photoJustSet = false;
+export function showPhotoViewNext() { photoJustSet = true; }
+
+// ---------- Modes ----------
+const MODE_KEY = 'projsim.mode';
+function setMode(mode) {
+  document.body.dataset.mode = mode;
+  document.querySelectorAll('.mode-tabs [data-mode]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.mode === mode)));
+  document.querySelectorAll('.pane').forEach((p) => { p.hidden = p.dataset.pane !== mode; });
+  try { localStorage.setItem(MODE_KEY, mode); } catch { /* ignore */ }
+}
+document.querySelectorAll('.mode-tabs [data-mode]').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+document.querySelectorAll('[data-goto]').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.goto)));
+setMode((() => { try { return localStorage.getItem(MODE_KEY) || 'check'; } catch { return 'check'; } })());
+
+// ---------- Menu ----------
+(() => {
+  const btn = $('menuBtn'), menu = $('menu');
+  const close = () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); };
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    menu.hidden = !menu.hidden;
+    btn.setAttribute('aria-expanded', String(!menu.hidden));
+  });
+  document.addEventListener('click', (e) => { if (!menu.hidden && !e.target.closest('.menu')) close(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  menu.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => setLang(b.dataset.lang)));
+  menu.querySelectorAll('[data-theme-set]').forEach((b) => b.addEventListener('click', () => setThemePref(b.dataset.themeSet)));
+  $('aboutBtn').addEventListener('click', close);
+})();
 
 let compareSplit = 0.5;
 function setPressed(btn, on) { btn.setAttribute('aria-pressed', String(on)); }
@@ -342,8 +441,9 @@ window.addEventListener('keydown', (e) => {
 });
 
 // language & theme
-function updateLangBtn() { $('langLabel').textContent = getLang() === 'tr' ? 'EN' : 'TR'; }
-$('langBtn').addEventListener('click', () => setLang(getLang() === 'tr' ? 'en' : 'tr'));
+function updateLangBtn() {
+  document.querySelectorAll('#menu [data-lang]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.lang === getLang())));
+}
 onLang(() => {
   updateLangBtn();
   updatePanels();
@@ -356,10 +456,8 @@ updateLangBtn();
 
 function updateThemeIcon() {
   const pref = getThemePref();
-  $('themeIcon').setAttribute('href', pref === 'dark' ? '#i-moon' : pref === 'light' ? '#i-sun' : '#i-auto');
-  $('themeBtn').title = `${t('ui.theme')}: ${t('theme.' + pref)}`;
+  document.querySelectorAll('#menu [data-theme-set]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.themeSet === pref)));
 }
-$('themeBtn').addEventListener('click', () => { cycleTheme(); });
 onTheme(() => { updateThemeIcon(); updatePanels(); kick(); });
 onLang(updateThemeIcon);
 updateThemeIcon();
@@ -373,11 +471,13 @@ wireDialog($('aboutDlg'));
 $('aboutBtn').addEventListener('click', () => $('aboutDlg').showModal());
 
 // ---------- Boot ----------
-buildControls($('controls'));
+buildControls($('checkControls'), CHECK_SECTIONS, { flat: true });
+buildControls($('setupControls'), SETUP_SECTIONS);
 initProfiles();
-initCalibration({ getSlideImage: () => slideImage, getScene: () => scene });
-initFullscreen();
+initCalibration({ getSlideImage: () => slideImage, getScene: () => scene, showPhotoViewNext });
+initStageBar();
 updatePanels();
+restoreRoomPhoto();
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   window.addEventListener('load', () => {

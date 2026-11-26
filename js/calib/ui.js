@@ -7,13 +7,17 @@ import { solveHomography, squareToQuad, applyH, pointInPolygon } from '../sim/ho
 import { computeScene } from '../sim/scene.js';
 import { srgbToLinear, linearToSrgb } from '../sim/photometry.js';
 import { drawPattern, patternLayout, GRAYS, COLORS } from './pattern.js';
-import { grayPlane, detectMarkers, recoverMarkers, patternHomography, estimateScreenInPattern, brightRegionQuad } from './detect.js';
+import { grayPlane, detectMarkers, fitPatternAspect, estimateScreenInPattern, sampleWallColor, brightRegionQuad } from './detect.js';
+import { buildPhotoRoom, whiteMask } from './photoroom.js';
+import { useBuiltRoom, canvasToBlob } from '../photoview.js';
+import { luminance } from '../sim/photometry.js';
 import { fitAffine, fitGamma, deriveModel } from './colorfit.js';
 import { QuadEditor } from './editor.js';
 
 const $ = (id) => document.getElementById(id);
 const WORK_MAX = 2000;
 const DETECT_MAX = 1100;
+const ASPECT_KEY = 'projsim.patternAspect';
 
 const st = {
   tab: 'pattern',
@@ -23,7 +27,10 @@ const st = {
   ref: 'current',     // 'current' | canvas
   refCanvas: null,
   detected: null,     // { markers, aspect }
+  surface: 'screen',  // projection surface seen in the photo
+  wallColor: null,
   applied: null,
+  dlSize: 'screen',
   step: 1,
 };
 
@@ -57,7 +64,8 @@ function grayOf(canvas) {
   c.width = w; c.height = h;
   const g = c.getContext('2d', { willReadFrequently: true });
   g.drawImage(canvas, 0, 0, w, h);
-  return { g: grayPlane(g.getImageData(0, 0, w, h).data, w, h), w, h, s };
+  const rgba = g.getImageData(0, 0, w, h).data;
+  return { g: grayPlane(rgba, w, h), rgba, w, h, s };
 }
 
 function setStatus(text) { $('calibStatus').textContent = text || ''; }
@@ -72,6 +80,7 @@ function showPattern() {
     canvas.width = Math.round(window.innerWidth * dpr);
     canvas.height = Math.round(window.innerHeight * dpr);
     drawPattern(canvas, getLang());
+    try { localStorage.setItem(ASPECT_KEY, String(canvas.width / canvas.height)); } catch { /* ignore */ }
   };
   paint();
   const close = () => {
@@ -96,51 +105,67 @@ function showPattern() {
   }
 }
 
+// ---------- Pattern download ----------
+const DL_SIZES = [['screen'], ['1920x1080', 1920, 1080], ['1920x1200', 1920, 1200], ['1280x800', 1280, 800], ['1024x768', 1024, 768], ['2048x1536', 2048, 1536], ['2732x2048', 2732, 2048], ['custom']];
+const DL_NOTE = { '2048x1536': 'iPad', '2732x2048': 'iPad Pro 12.9″' };
+function screenPx() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.round(Math.max(screen.width, screen.height) * dpr), h = Math.round(Math.min(screen.width, screen.height) * dpr);
+  return [w, h];
+}
+function downloadPattern() {
+  let w, h;
+  if (st.dlSize === 'screen') [w, h] = screenPx();
+  else if (st.dlSize === 'custom') {
+    w = Math.round(Number($('dlW').value)); h = Math.round(Number($('dlH').value));
+    st.dlW = w; st.dlH = h;
+  } else [, w, h] = DL_SIZES.find((x) => x[0] === st.dlSize);
+  if (!(w >= 320 && h >= 240 && w <= 8192 && h <= 8192)) { toast(t('calib.dlBad')); return; }
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  drawPattern(c, getLang());
+  c.toBlob((blob) => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${t('calib.dlName')}-${w}x${h}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }, 'image/png');
+}
+
 // ---------- Detection ----------
 function runPatternDetection() {
-  const { g, w, h, s } = grayOf(st.photo);
+  const { g, rgba, w, h, s } = grayOf(st.photo);
   const found = detectMarkers(g, w, h);
-  // try common output aspects; the one with the best marker fit wins
-  let best = null;
-  let markers = found;
-  for (const aspect of [16 / 9, 16 / 10, 4 / 3, 3 / 2]) {
-    const ms = recoverMarkers(g, w, h, found, aspect);
-    const H = ms.length >= 2 ? patternHomography(ms, aspect) : null;
-    if (!H) continue;
-    const L = patternLayout(aspect);
-    let err = 0;
-    for (const m of ms) {
-      const mk = L.markers[m.id];
-      const pc = [[mk.x, mk.y], [mk.x + mk.w, mk.y], [mk.x + mk.w, mk.y + mk.h], [mk.x, mk.y + mk.h]];
-      pc.forEach((p, i) => { const q = applyH(H, ...p); err += Math.hypot(q[0] - m.corners[i][0], q[1] - m.corners[i][1]); });
-    }
-    err /= ms.length;
-    // more markers explained is better than a slightly smaller residual
-    if (!best || ms.length > best.n || (ms.length === best.n && err < best.err)) best = { H, aspect, err, n: ms.length, ms };
-  }
-  if (best) markers = best.ms;
+  let hint = null;
+  try { hint = Number(localStorage.getItem(ASPECT_KEY)) || null; } catch { /* ignore */ }
+  const best = fitPatternAspect(g, w, h, found, hint);
   if (!best) {
     const q = brightRegionQuad(g, w, h);
     const proj = q ? q.map(([x, y]) => [x / s, y / s]) : defaultQuad(st.photo, 0.12);
     st.detected = null;
+    st.surface = 'screen';
     editor.setQuads({ proj, screen: shrink(proj, 0.03) });
-    setStatus(t('calib.notFound', { n: markers.length }));
-    toast(t('calib.notFound', { n: markers.length }), 4200);
+    setStatus(t('calib.notFound', { n: found.length }));
+    toast(t('calib.notFound', { n: found.length }), 4200);
     return;
   }
   const proj = [[0, 0], [1, 0], [1, 1], [0, 1]].map(([u, v]) => applyH(best.H, u, v).map((c) => c / s));
-  const scrUv = estimateScreenInPattern(g, w, h, best.H, best.aspect);
-  const screen = scrUv.map(([u, v]) => applyH(best.H, u, v).map((c) => c / s));
-  st.detected = { markers: markers.length, aspect: best.aspect };
-  editor.setQuads({ proj, screen });
-  setStatus(t('calib.found', { n: markers.length }));
+  const scr = estimateScreenInPattern(g, w, h, best.H, best.aspect);
+  st.surface = scr.surface;
+  st.wallColor = sampleWallColor(rgba, w, h, best.H);
+  const screen = scr.corners.map(([u, v]) => applyH(best.H, u, v).map((c) => c / s));
+  st.detected = { markers: best.markers.length, aspect: best.aspect };
+  editor.setQuads({ proj, screen: st.surface === 'wall' ? null : screen });
+  setStatus(`${t('calib.found', { n: best.markers.length })} · ${t('calib.aspectFound', { a: num(best.aspect, 2) })}`);
 }
 
 function runPhotoGuess() {
   const { g, w, h, s } = grayOf(st.photo);
   const q = brightRegionQuad(g, w, h);
   const proj = q ? q.map(([x, y]) => [x / s, y / s]) : defaultQuad(st.photo, 0.12);
-  editor.setQuads({ proj, screen: shrink(proj, 0.04) });
+  st.detected = null;
+  editor.setQuads({ proj, screen: st.surface === 'wall' ? null : shrink(proj, 0.04) });
   setStatus(t('calib.guessed'));
 }
 
@@ -229,17 +254,25 @@ function photoColorFit(projQuad, screenQuad) {
 }
 
 // ---------- Apply ----------
-function apply() {
+async function apply() {
   const { proj, screen } = editor.quads;
-  if (!proj || !screen) return;
-  const G = solveHomography(screen, [[0, 0], [1, 0], [1, 1], [0, 1]]);
-  if (!G) { toast(t('calib.badQuad')); return; }
-  const cornersN = proj.map(([x, y]) => applyH(G, x, y));
+  if (!proj) return;
+  const onWall = st.surface === 'wall' || !screen;
   const p = JSON.parse(JSON.stringify(store.state.params));
-  p.geometry.corners = cornersN;
+  p.room.layout = { ...(p.room.layout || {}), surface: onWall ? 'wall' : 'screen' };
+  if (onWall) {
+    // no screen edge to measure against: the picture itself is the reference
+    Object.assign(p.geometry, { corners: null, scale: 1, offsetX: 0, offsetY: 0, keystoneV: 0, keystoneH: 0, rotation: 0 });
+  } else {
+    const G = solveHomography(screen, [[0, 0], [1, 0], [1, 1], [0, 1]]);
+    if (!G) { toast(t('calib.badQuad')); return; }
+    p.geometry.corners = proj.map(([x, y]) => applyH(G, x, y));
+  }
+  if (st.wallColor) p.room.wallColor = st.wallColor;
   const slide = store.state.slides[store.state.current];
-  const sc = computeScene(p, slide ? slide.width : 1920, slide ? slide.height : 1080);
-  const color = st.tab === 'pattern' ? patternColorFit(proj) : photoColorFit(proj, screen);
+  const sw = slide ? slide.width : 1920, sh = slide ? slide.height : 1080;
+  const sc = computeScene(p, sw, sh);
+  const color = st.tab === 'pattern' ? patternColorFit(proj) : photoColorFit(proj, screen || proj);
   let model = null;
   if (color) {
     model = deriveModel(color.fit, color.gamma, sc.light);
@@ -248,15 +281,53 @@ function apply() {
     p.room.ambientLux = Math.min(5000, model.ambientLux);
     p.room.ambientColor = model.ambientColor;
   }
+  // re-lightable photo of the real room
+  const L2 = computeScene(p, sw, sh).light;
+  const ratio = model ? Math.max(0.005, luminance(model.black) / Math.max(1e-6, luminance(model.white)))
+    : (L2.Ea + L2.Epb) / Math.max(1, L2.Epw - L2.Epb);
+  const isWhite = st.tab === 'pattern' ? whiteMask(st.detected ? st.detected.aspect : 16 / 9) : refWhiteMask();
+  let room = null;
+  try { room = buildPhotoRoom(st.photo, proj, isWhite, ratio); } catch (e) { console.error(e); }
+  p.calib = room ? {
+    quad: room.quad, Yamb: room.Yamb, Yproj: room.Yproj,
+    Ea0: L2.Ea, Ep0: L2.Epw - L2.Epb, contrast: model ? model.effContrast : null,
+    aspect: st.detected ? st.detected.aspect : null, date: Date.now(),
+  } : null;
   store.state.params = p;
   store.state.dirty = true;
   store.emit('profile');
   store.emit('params');
-  const after = computeScene(p, slide ? slide.width : 1920, slide ? slide.height : 1080);
-  st.applied = { model, color, cuts: after.cuts, visible: after.visibleFrac };
+  if (room) {
+    deps.showPhotoViewNext && deps.showPhotoViewNext();
+    await useBuiltRoom(room, p.calib, await canvasToBlob(st.photo, 480, 'image/jpeg', 0.8));
+  }
+  const after = computeScene(p, sw, sh);
+  st.applied = { model, color, cuts: after.cuts, visible: after.visibleFrac, onWall, photo: !!room };
   st.step = 5;
   renderSteps();
   toast(t('calib.applied'));
+}
+
+// For "any photo": where the reference slide is near white, the photo shows projector white.
+function refWhiteMask() {
+  const ref = st.ref === 'current' ? deps.getSlideImage() : st.refCanvas;
+  if (!ref) return () => false;
+  const rw = 240, rh = Math.round((rw * ref.height) / ref.width);
+  const c = document.createElement('canvas');
+  c.width = rw; c.height = rh;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(ref, 0, 0, rw, rh);
+  const d = g.getImageData(0, 0, rw, rh).data;
+  return (u, v) => {
+    if (u < 0.01 || v < 0.01 || u > 0.99 || v > 0.99) return false;
+    const x = Math.min(rw - 1, Math.floor(u * rw)), y = Math.min(rh - 1, Math.floor(v * rh));
+    // require a small white neighbourhood so anti-aliased text edges are skipped
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const k = ((Math.min(rh - 1, Math.max(0, y + dy))) * rw + Math.min(rw - 1, Math.max(0, x + dx))) * 4;
+      if (d[k] < 235 || d[k + 1] < 235 || d[k + 2] < 235) return false;
+    }
+    return true;
+  };
 }
 
 // ---------- Steps UI ----------
@@ -269,6 +340,7 @@ function resultsHtml() {
   if (!a) return '';
   const rows = [];
   const cuts = ['left', 'right', 'top', 'bottom'].filter((s) => a.cuts[s] > 0.005).map((s) => `${t('side.' + s)} ${num(a.cuts[s] * 100, 1)}%`);
+  rows.push([t('calib.rSurface'), t(a.onWall ? 'layout.wall' : 'layout.screen')]);
   rows.push([t('calib.rVisible'), `${num(a.visible * 100, 0)}%`]);
   rows.push([t('calib.rCut'), cuts.length ? cuts.join(', ') : '—']);
   let sw = '';
@@ -277,8 +349,8 @@ function resultsHtml() {
     rows.push([t('calib.rAmbient'), `≈ ${num(a.model.ambientLux)} lx`]);
     rows.push([t('calib.rGamma'), num(a.model.gamma, 2)]);
     if (a.color && a.color.measured) {
-      const W = a.model.white;
-      const Yw = 0.2126 * W[0] + 0.7152 * W[1] + 0.0722 * W[2];
+      // normalise by the measured white patch (projector white + room light)
+      const Yw = Math.max(1e-6, luminance(a.color.measured[7]));
       const cells = [];
       const ids = [0, 3, 7, 8, 9, 10, 13];
       for (const i of ids) {
@@ -303,7 +375,12 @@ function renderSteps() {
   const s = (n) => (st.step > n ? 'done' : st.step === n ? 'active' : '');
   let html = '';
   if (st.tab === 'pattern') {
-    html += step(1, t('calib.p1t'), `<p>${t('calib.p1b')}</p><div class="btn-row"><button class="btn" id="showPattern"><svg class="ic"><use href="#i-screen"/></svg>${t('calib.showPattern')}</button></div>`, s(1));
+    const sizes = DL_SIZES.map(([k, w, h]) => `<option value="${k}" ${st.dlSize === k ? 'selected' : ''}>${k === 'screen' ? t('calib.dlScreen', { w: screenPx()[0], h: screenPx()[1] }) : k === 'custom' ? t('calib.dlCustom') : `${w} × ${h}${DL_NOTE[k] ? ' · ' + DL_NOTE[k] : ''}`}</option>`).join('');
+    html += step(1, t('calib.p1t'), `<p>${t('calib.p1b')}</p><div class="btn-row"><button class="btn" id="showPattern"><svg class="ic"><use href="#i-screen"/></svg>${t('calib.showPattern')}</button></div>
+      <p style="margin-top:10px">${t('calib.dlBody')}</p>
+      <div class="dl-row"><div class="select-wrap grow"><select id="dlSize">${sizes}</select><svg class="ic"><use href="#i-chev"/></svg></div>
+      <button class="btn" id="dlPattern"><svg class="ic"><use href="#i-down"/></svg>${t('calib.dlBtn')}</button></div>
+      <div class="dl-custom" ${st.dlSize === 'custom' ? '' : 'hidden'}><input type="number" id="dlW" min="320" max="8192" value="${st.dlW || 1920}" aria-label="W"> × <input type="number" id="dlH" min="240" max="8192" value="${st.dlH || 1080}" aria-label="H"></div>`, s(1));
     html += step(2, t('calib.p2t'), `<ul>${t('calib.p2b')}</ul>`, s(2));
     html += step(3, t('calib.p3t'), `<p>${t('calib.p3b')}</p><div class="btn-row"><button class="btn primary" id="choosePhoto"><svg class="ic"><use href="#i-image"/></svg>${t('calib.choosePhoto')}</button></div>`, hasPhoto ? 'done' : s(3));
   } else {
@@ -314,7 +391,11 @@ function renderSteps() {
       <label class="check"><input type="radio" name="refsrc" value="file" ${st.ref !== 'current' ? 'checked' : ''}><span>${t('calib.refFile')}${st.refCanvas ? ' ✓' : ''}</span></label>
       <div class="btn-row" style="margin-top:6px"><button class="btn" id="chooseRef">${t('calib.chooseRef')}</button></div>`, hasPhoto ? (st.step > 4 ? 'done' : 'active') : '');
   }
-  html += step(4, t('calib.s4t'), `<p>${t('calib.s4b')}</p><div class="btn-row"><button class="btn primary" id="applyCalib" ${hasPhoto ? '' : 'disabled'}>${t('calib.apply')}</button>
+  const surf = `<div class="ctl-top"><label>${t('layout.surface')}</label></div><div class="chips" id="surfChips">
+      <button class="chip" type="button" data-surf="screen" aria-pressed="${st.surface !== 'wall'}">${t('layout.screen')}</button>
+      <button class="chip" type="button" data-surf="wall" aria-pressed="${st.surface === 'wall'}">${t('layout.wall')}</button></div>
+      <p class="muted small" style="margin-top:6px">${t(st.surface === 'wall' ? 'calib.surfWallHint' : 'calib.surfScreenHint')}</p>`;
+  html += step(4, t('calib.s4t'), `<p>${t(st.surface === 'wall' ? 'calib.s4bWall' : 'calib.s4b')}</p>${hasPhoto ? surf : ''}<div class="btn-row" style="margin-top:10px"><button class="btn primary" id="applyCalib" ${hasPhoto ? '' : 'disabled'}>${t('calib.apply')}</button>
     <button class="btn" id="redetect" ${hasPhoto ? '' : 'disabled'}><svg class="ic"><use href="#i-reset"/></svg>${t('calib.redetect')}</button></div>`, hasPhoto ? (st.step > 4 ? 'done' : 'active') : '');
   if (st.applied) html += step(5, t('calib.s5t'), resultsHtml(), 'active');
   box.innerHTML = html;
@@ -324,11 +405,22 @@ function renderSteps() {
   on('choosePhoto', () => pickFile('image/*', loadPhoto));
   on('chooseRef', () => pickFile('image/*', async (f) => { st.refCanvas = await readPhoto(f); st.ref = 'file'; renderSteps(); }));
   on('applyCalib', apply);
+  on('dlPattern', downloadPattern);
+  const dl = $('dlSize');
+  if (dl) dl.addEventListener('change', () => { st.dlSize = dl.value; renderSteps(); });
+  box.querySelectorAll('[data-surf]').forEach((b) => b.addEventListener('click', () => {
+    st.surface = b.dataset.surf;
+    const q = editor.quads;
+    // a screen needs its own corners: start slightly outside the picture
+    editor.setQuads({ proj: q.proj, screen: st.surface === 'wall' ? null : (q.screen || shrink(q.proj, -0.04)) }, false);
+    st.applied = null;
+    if (st.step > 4) st.step = 4;
+    renderSteps();
+  }));
   on('redetect', () => (st.tab === 'pattern' ? runPatternDetection() : runPhotoGuess()));
   on('calibSave', async () => {
     const name = ($('calibName').value || '').trim() || t('profiles.defaultName');
-    const blob = st.photo ? await thumbBlob(st.photo) : null;
-    await saveProfile(name.slice(0, 60), { photo: blob });
+    await saveProfile(name.slice(0, 60));
     $('calibDlg').close();
   });
   box.querySelectorAll('input[name="refsrc"]').forEach((r) => r.addEventListener('change', () => {

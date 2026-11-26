@@ -18,17 +18,20 @@ Bilgisayarda net görünen slaytlar sınıftaki projektörde çoğu zaman dağı
 
 ## Özellikler
 
+Uygulamanın iki modu var: **Slaytları kontrol et** (her ders öncesi: sınıfı ve koltuğunu seç, neyi düzeltmen gerektiğini gör) ve **Sınıfı kur** (her sınıf için bir kez: kalibre et, sınıfı tarif et, kaydet).
+
 - **Ortam ışığı ve kontrast** — perdeye düşen ışık (*karanlık*tan *güneşli oda*ya hazır ayarlarla), ışığın rengi, projektör parlaklığı, lamba durumu ve yerel kontrast birlikte perdedeki gerçek kontrastı belirler.
 - **Renk kayması** — projektörün renk sıcaklığı ya da kalibrasyon fotoğrafından ölçülen renk matrisi.
 - **Taşma ve keystone** — görüntü boyutu, kayma, keystone ve eğiklik; perdeyi ıskalayan kısım duvara ve yanındaki beyaz tahtaya düşer.
+- **Sınıf düzeni** — perdeye ya da doğrudan duvara (ölçülen rengiyle) yansıtma, beyaz tahta ve pencere solda/sağda/yok, önde alçak görüntünün altını kapatan masa ya da kürsü.
 - **Güvenli alan** — slaytının perdeye düşeceği kesin olan en büyük dikdörtgen ve her kenardan ne kadar kesildiği.
 - **Arka sıra okunabilirliği** — izleme mesafesi, görme keskinliği, projektör çözünürlüğü ve odak bulanıklık olarak modellenir; seçilen koltuk için en küçük yazı boyutu önerilir.
 - **Sorun haritası** — orijinal ve simüle edilmiş slayt karo karo karşılaştırılır; kontrastını kaybeden yazılar, bulanıklaşan ayrıntılar ve perdenin dışına düşen içerik işaretlenir.
 - **Karşılaştırma kaydırıcısı** — "bilgisayarında" ile "perdede" arasında sürükle.
-- **Oda ve perde görünümleri** — seçilen koltuktan duvar görünümü (izleme mesafesiyle yaklaşıp uzaklaşır) ya da perdeye yakın görünüm.
+- **Oda, perde ve fotoğraf görünümleri** — seçilen koltuktan sanal sınıf (izleme mesafesiyle yaklaşıp uzaklaşır), görüntüye yakın plan ya da **slaytının gerçek sınıfın kalibrasyon fotoğrafı içindeki hali**: duvar dokusu, projektörün gri bantları, beyaz tahta ve masa gerçektir; ortam ışığını ya da projektörü değiştirdiğinde fotoğraf da yeniden aydınlatılır.
 - **Tam ekran** — düğme, çift tıklama ya da <kbd>F</kbd>; küçük bir araç çubuğuyla tam ekrandan çıkmadan slayt, görünüm, koltuk ve katmanlar değiştirilebilir.
 - **Fotoğraftan kalibrasyon**
-  - *Test deseni:* hazır deseni projektörde göster, oturduğun yerden fotoğrafını çek, yükle. Kodlu işaretler otomatik bulunur; yansıyan görüntü, perde kenarları, kontrast, ortam ışığı ve renk tepkisi ölçülür.
+  - *Test deseni:* hazır deseni projektörde göster (ya da istediğin boyutta PNG olarak indirip projektöre bağlı cihazda tam ekran aç), oturduğun yerden fotoğrafını çek, yükle. Kodlu işaretler ve desenin oranı otomatik bulunur; görüntü, perde mi çıplak duvar mı olduğu, duvar rengi, kontrast, ortam ışığı ve renk tepkisi ölçülür.
   - *Herhangi bir fotoğraf:* projektördeki bir slaytın herhangi bir fotoğrafını, slaytın kendisiyle (ya da uygulamada açık olanla) birlikte kullan. Köşeler tahmin edilir, büyüteçle ince ayar yapılabilir.
 - **Oda profilleri** — odaları yerelde (IndexedDB) kaydet, aralarında geçiş yap, meslektaşlarınla paylaşmak için JSON olarak dışa/içe aktar.
 - **Girdiler** — PDF (pdf.js ile), PowerPoint `.pptx` (yerleşik, elden geldiğince doğru çizici), PNG/JPG/WebP.
@@ -44,10 +47,10 @@ Bilgisayarda net görünen slaytlar sınıftaki projektörde çoğu zaman dağı
 
 ### Kendi projektörünü kalibre etmek
 
-1. Bilgisayar projektöre bağlıyken **Kalibre et** → **Test deseni** → **Test desenini göster**.
-2. Sınıfın ortasından, perdenin tamamını ve duvara taşan kısmı içeren bir fotoğraf çek. Flaş kullanma; oda ışığı ders sırasındaki gibi olsun.
-3. Fotoğrafı yükle. Turuncu noktaları (yansıyan görüntü) ve mavi noktaları (perde yüzeyi) kontrol et, ardından **Simülasyona uygula**.
-4. Sonucu o oda için profil olarak kaydet.
+1. Bilgisayar projektöre bağlıyken **Sınıfı kur** → **Fotoğraftan kalibre et** → **Test desenini göster**. Tablet ya da telefonda bunun yerine **İndir**'i kullanıp PNG'yi fotoğraflar uygulamasından tam ekran aç (üstünde tarayıcı düğmesi kalmaz).
+2. Sınıfın ortasından, görüntünün tamamını ve duvara taşan kısmı içeren bir fotoğraf çek. Flaş kullanma; oda ışığı ders sırasındaki gibi olsun.
+3. Fotoğrafı yükle. Turuncu noktalar beyaz test deseninin köşelerine gider — projektörün etrafına ekleyebildiği gri bantlara değil. Perde bulunduysa mavi noktalar beyaz perde yüzeyini gösterir; bulunmadıysa yüzey *Duvar* olarak ayarlanır. Ardından **Simülasyona uygula**.
+4. Sınıfı kaydet. Kalibrasyon fotoğrafı da onunla birlikte saklanır ve **Fotoğraf** görünümünü sağlar.
 
 İpuçları: doğru yazı boyutu önerisi için *Perde* bölümünde gerçek **perde genişliğini** gir. Telefon kameraları beyaz dengesini otomatik ayarladığından fotoğraftan ölçülen renk kayması yaklaşıktır; kontrast ve geometri çok daha güvenilirdir.
 

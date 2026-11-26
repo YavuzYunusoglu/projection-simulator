@@ -36,24 +36,26 @@ function percentiles(values, lo, hi) {
 
 /**
  * @param orig  Float32 luminance of the original slide (w×h)
- * @param sim   Float32 luminance of the simulation (w×h)
- * @param visible polygon (slide uv) of the part that lands on the screen
+ * @param sim   Float32 luminance of the simulation (w×h), with viewing blur
+ * @param sharpLum Float32 luminance of the simulation without the viewer's blur (for contrast)
+ * @param visible polygon (slide uv) of the part that lands on the screen, or a (u,v)=>bool test
  * @returns {tiles, cols, rows, summary}
  */
-export function analyze(orig, sim, w, h, visible, tile = 20) {
+export function analyze(orig, sim, w, h, visible, tile = 20, sharpLum = sim) {
   const cols = Math.floor(w / tile), rows = Math.floor(h / tile);
   const tiles = [];
   const summary = { cut: 0, contrastWarn: 0, contrastBad: 0, blurWarn: 0, blurBad: 0, content: 0 };
-  const vo = [], vs = [];
+  const vo = [], vs = [], vc = [];
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      vo.length = 0; vs.length = 0;
+      vo.length = 0; vs.length = 0; vc.length = 0;
       let go = 0, gs = 0;
       for (let y = r * tile; y < (r + 1) * tile; y++) {
         for (let x = c * tile; x < (c + 1) * tile; x++) {
           const i = y * w + x;
           vo.push(orig[i]);
           vs.push(sim[i]);
+          vc.push(sharpLum[i]);
           if (x + 1 < w && y + 1 < h) {
             go += Math.abs(orig[i + 1] - orig[i]) + Math.abs(orig[i + w] - orig[i]);
             gs += Math.abs(sim[i + 1] - sim[i]) + Math.abs(sim[i + w] - sim[i]);
@@ -69,15 +71,25 @@ export function analyze(orig, sim, w, h, visible, tile = 20) {
       summary.content++;
       const [s5, s95] = percentiles(vs, 0.04, 0.96);
       const sRange = Math.max(s95 - s5, 1e-4);
-      const sCR = (s95 + 0.05) / (s5 + 0.05);
+      // Contrast of the content itself: take the pixels that are "ink" and "paper" in the
+      // original and see how far apart they end up in the simulation. Unlike tile
+      // percentiles this does not depend on how much of the tile the strokes cover.
+      let sd = 0, nd = 0, sb = 0, nb = 0;
+      const lo = o5 + 0.15 * oRange, hi = o95 - 0.15 * oRange;
+      for (let k = 0; k < vo.length; k++) {
+        if (vo[k] <= lo) { sd += vc[k]; nd++; } else if (vo[k] >= hi) { sb += vc[k]; nb++; }
+      }
+      const ink = nd ? sd / nd : s5, paper = nb ? sb / nb : s95;
+      const sCR = (Math.max(ink, paper) + 0.05) / (Math.min(ink, paper) + 0.05);
       const sharp = (gs / sRange) / Math.max(go / oRange, 1e-4);
       const u = (c + 0.5) / cols, v = (r + 0.5) / rows;
       const t = { c, r, sev: 0, issues: [] };
-      if (visible && visible.length >= 3 && !pointInPolygon(u, v, visible)) {
+      const seen = typeof visible === 'function' ? visible(u, v) : !(visible && visible.length >= 3) || pointInPolygon(u, v, visible);
+      if (!seen) {
         t.sev = 2; t.issues.push('cut'); summary.cut++;
       } else {
-        if (sCR < 1.5) { t.sev = 2; t.issues.push('contrast'); summary.contrastBad++; }
-        else if (sCR < 2.0) { t.sev = Math.max(t.sev, 1); t.issues.push('contrast'); summary.contrastWarn++; }
+        if (sCR < 1.6) { t.sev = 2; t.issues.push('contrast'); summary.contrastBad++; }
+        else if (sCR < 2.2) { t.sev = Math.max(t.sev, 1); t.issues.push('contrast'); summary.contrastWarn++; }
         if (sharp < 0.33) { t.sev = 2; t.issues.push('blur'); summary.blurBad++; }
         else if (sharp < 0.55) { t.sev = Math.max(t.sev, 1); t.issues.push('blur'); summary.blurWarn++; }
       }

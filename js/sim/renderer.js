@@ -53,6 +53,8 @@ export class SimRenderer {
     this.blurA = null;
     this.blurB = null;
     this.maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+    this.ambTex = null;
+    this.projTex = null;
   }
 
   _tex(w, h, internal, format, type, mip) {
@@ -109,6 +111,33 @@ export class SimRenderer {
     this.sigma = -1;
   }
 
+  _upload(tex, source) {
+    const gl = this.gl;
+    if (tex) gl.deleteTexture(tex);
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  }
+
+  /** Layers of the real-room photo (or null to clear). */
+  setPhotoRoom(room) {
+    if (!room) {
+      if (this.ambTex) this.gl.deleteTexture(this.ambTex);
+      if (this.projTex) this.gl.deleteTexture(this.projTex);
+      this.ambTex = this.projTex = null;
+      return;
+    }
+    this.ambTex = this._upload(this.ambTex, room.amb);
+    this.projTex = this._upload(this.projTex, room.proj);
+  }
+
   _blur(sigma) {
     if (!this.orig) return;
     if (Math.abs(sigma - this.sigma) < 0.03) return;
@@ -153,8 +182,19 @@ export class SimRenderer {
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.orig);
     gl.uniform1i(u.uOrig, 1);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.ambTex);
+    gl.uniform1i(u.uAmbTex, 2);
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, this.projTex);
+    gl.uniform1i(u.uProjTex, 3);
+    gl.uniform2f(u.uPhotoSize, U.photoSize ? U.photoSize[0] : 1, U.photoSize ? U.photoSize[1] : 1);
+    gl.uniform1f(u.uKA, U.kA ?? 1);
+    gl.uniform2f(u.uCenter, U.center ? U.center[0] : 0, U.center ? U.center[1] : 0);
+    gl.uniform1f(u.uKP, U.kP ?? 1);
+    gl.uniform1f(u.uPhotoRef, U.photoRef ?? 1);
     gl.uniform1i(u.uDecode, this.float ? 0 : 1);
-    gl.uniform1i(u.uMode, mode);
+    gl.uniform1i(u.uMode, mode === 0 && U.photoMode && this.ambTex ? 2 : mode);
     gl.uniform3f(u.uCam, U.cam[0], U.cam[1], U.cam[2]);
     gl.uniform1f(u.uAspect, aspect);
     gl.uniformMatrix3fv(u.uHinv, false, toColMajor(U.Hinv));
@@ -178,6 +218,9 @@ export class SimRenderer {
     gl.uniform1f(u.uCeil, U.ceil);
     gl.uniform1f(u.uTrunk, U.trunk);
     gl.uniform1f(u.uFloor, U.floor ?? 100);
+    gl.uniform4fv(u.uDesk, U.desk || [1e4, 1e4, 1e4 + 1, 1e4 + 1]);
+    gl.uniform3fv(u.uWall, U.wallAlb || [0.8, 0.795, 0.78]);
+    gl.uniform1i(u.uSurface, U.surface || 0);
     gl.uniform3fv(u.uStage, U.stage);
     gl.uniform3fv(u.uAdapt, U.adapt || [1, 1, 1]);
   }

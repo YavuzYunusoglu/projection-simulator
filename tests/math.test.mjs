@@ -114,3 +114,20 @@ test('viewing distance blur and minimum font size grow with distance', () => {
   close(b / a, 2, 0.01);
   assert.ok(a > 15 && a < 40);
 });
+
+test('projected onto a wall nothing is cut off, a desk in front hides the bottom', () => {
+  const p = baseParams();
+  p.geometry.offsetX = 0.2; // would spill over a screen
+  p.room = { ambientLux: 0, ambientColor: 'daylight', layout: { surface: 'wall', board: 'none', window: 'none', desk: 'none' } };
+  let s = computeScene(p, 1920, 1080);
+  close(s.visibleFrac, 1, 1e-9);
+  close(s.cuts.right, 0, 0.01);
+  // lower the picture behind a tall desk
+  p.geometry.offsetY = 0.6;
+  p.room.layout.desk = 'high';
+  s = computeScene(p, 1920, 1080);
+  assert.ok(s.visibleFrac < 0.95, `visible ${s.visibleFrac}`);
+  assert.ok(s.cuts.bottom > 0.05, `bottom cut ${s.cuts.bottom}`);
+  assert.equal(s.isVisible(0.5, 0.98), false);
+  assert.equal(s.isVisible(0.5, 0.1), true);
+});

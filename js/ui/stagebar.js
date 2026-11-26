@@ -1,4 +1,5 @@
-// Full-screen mode for the stage, with a small auto-hiding toolbar.
+// Toolbar under the stage: view, overlays and full screen. In full screen it floats over the
+// picture, adds slide navigation and seat presets, and fades out when the mouse rests.
 import { store, DISTANCE_PRESETS } from '../state.js';
 import { t, onLang } from '../i18n.js';
 import { selectSlide } from './slides.js';
@@ -16,12 +17,8 @@ export function toggleFullscreen() {
 
 function enter() {
   if (!store.state.slides.length) return;
-  if (native()) {
-    $('stage').requestFullscreen().catch(() => { pseudo = true; sync(); });
-  } else {
-    pseudo = true;
-    sync();
-  }
+  if (native()) $('stage').requestFullscreen().catch(() => { pseudo = true; sync(); });
+  else { pseudo = true; sync(); }
 }
 
 function exit() {
@@ -35,20 +32,21 @@ function wake() {
   clearTimeout(idleTimer);
   if (isFullscreen()) {
     idleTimer = setTimeout(() => {
-      if (!stage.querySelector('.fs-bar:hover')) stage.classList.add('fs-idle');
+      if (!stage.querySelector('.stage-bar:hover')) stage.classList.add('fs-idle');
     }, 2500);
   }
 }
 
-function update() {
-  const { slides, current, view, params } = store.state;
+export function updateStageBar() {
+  const { slides, current, view, params, photo } = store.state;
   $('fsCount').textContent = slides.length ? `${current + 1} / ${slides.length}` : '–';
-  document.querySelectorAll('[data-fs-view]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.fsView === view)));
-  document.querySelectorAll('[data-fs-toggle]').forEach((b) => b.setAttribute('aria-pressed', $(b.dataset.fsToggle).getAttribute('aria-pressed')));
+  const photoBtn = document.querySelector('#viewSeg [data-view="photo"]');
+  photoBtn.hidden = !photo;
+  document.querySelectorAll('#viewSeg [data-view]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.view === view)));
   document.querySelectorAll('#fsDist button').forEach((b) => {
     b.setAttribute('aria-pressed', String(Math.abs(params.viewer.distance - Number(b.dataset.m)) < 0.3));
   });
-  $('fsBtn').hidden = !slides.length;
+  $('stageBar').classList.toggle('disabled', !slides.length);
 }
 
 function sync() {
@@ -56,7 +54,8 @@ function sync() {
   $('stage').classList.toggle('is-fs', on);
   document.body.classList.toggle('pseudo-fs', pseudo);
   $('fsBtn').title = t(on ? 'fs.exit' : 'fs.enter');
-  update();
+  $('fsIcon').setAttribute('href', on ? '#i-collapse' : '#i-expand');
+  updateStageBar();
   wake();
 }
 
@@ -73,29 +72,24 @@ function buildDistance() {
   }
 }
 
-export function initFullscreen() {
+export function initStageBar() {
   buildDistance();
   onLang(() => { buildDistance(); sync(); });
   $('fsBtn').addEventListener('click', toggleFullscreen);
   $('glCanvas').addEventListener('dblclick', toggleFullscreen);
   document.addEventListener('fullscreenchange', sync);
-  const bar = $('fsBar');
-  bar.addEventListener('click', (e) => {
-    const b = e.target.closest('button');
+  $('stageBar').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-fs]');
     if (!b) return;
     if (b.dataset.fs === 'prev') selectSlide(store.state.current - 1);
     if (b.dataset.fs === 'next') selectSlide(store.state.current + 1);
-    if (b.dataset.fs === 'exit') exit();
-    // reuse the top-bar controls so both stay in sync
-    if (b.dataset.fsView) document.querySelector(`.bar [data-view="${b.dataset.fsView}"]`).click();
-    if (b.dataset.fsToggle) $(b.dataset.fsToggle).click();
-    update();
+    updateStageBar();
   });
   $('stage').addEventListener('pointermove', wake);
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && isFullscreen()) { e.preventDefault(); exit(); return; }
     if (isFullscreen()) wake();
   });
-  store.subscribe((what) => { if (['slide', 'slides', 'params', 'profile', 'chip'].includes(what)) update(); });
-  update();
+  store.subscribe((what) => { if (['slide', 'slides', 'params', 'profile', 'chip', 'photo', 'view'].includes(what)) updateStageBar(); });
+  updateStageBar();
 }

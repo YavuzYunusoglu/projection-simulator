@@ -32,3 +32,10 @@ export function cycleTheme() {
 export function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
+
+export function setThemePref(p) {
+  if (!ORDER.includes(p)) return;
+  pref = p;
+  try { localStorage.setItem(KEY, pref); } catch { /* ignore */ }
+  apply();
+}

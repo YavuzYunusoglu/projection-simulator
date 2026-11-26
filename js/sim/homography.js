@@ -148,7 +148,7 @@ function lerpAt(a, b, t) {
  * `aspect` is the slide width/height so that the grid cells are physically square.
  * Returns {x0, y0, x1, y1} in uv or null.
  */
-export function largestInscribedRect(poly, aspect, res = 160) {
+export function largestInscribedRect(poly, aspect, res = 160, exclude = []) {
   if (!poly || poly.length < 3) return null;
   const cols = res, rows = Math.max(4, Math.round(res / aspect));
   const heights = new Array(cols).fill(0);
@@ -157,7 +157,8 @@ export function largestInscribedRect(poly, aspect, res = 160) {
     const y = (r + 0.5) / rows;
     for (let c = 0; c < cols; c++) {
       const x = (c + 0.5) / cols;
-      heights[c] = pointInPolygon(x, y, poly) ? heights[c] + 1 : 0;
+      const ok = pointInPolygon(x, y, poly) && !exclude.some((q) => pointInPolygon(x, y, q));
+      heights[c] = ok ? heights[c] + 1 : 0;
     }
     // largest rectangle in histogram
     const stack = [];

@@ -101,7 +101,7 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.005em; }
 .slide-list .warn-mark { position: absolute; right: 3px; top: 3px; width: 16px; height: 16px; color: var(--warn); background: var(--surface); border-radius: 2px; padding: 1px; }
 @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } }
 
-.stage { display: grid; grid-template-rows: 1fr auto; min-width: 0; min-height: 0; background: var(--stage); }
+.stage { display: grid; grid-template-rows: 1fr auto auto; min-width: 0; min-height: 0; background: var(--stage); position: relative; }
 .stage-frame { position: relative; min-height: 0; overflow: hidden; }
 #glCanvas, #overlayCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #glCanvas { opacity: 0; transition: opacity 300ms var(--ease); }
@@ -170,31 +170,81 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.005em; }
   font: 500 11.5px var(--mono); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
 }
 
-/* Full screen */
-.fs-btn { position: absolute; right: 12px; bottom: 12px; z-index: 3; }
-.fs-bar {
-  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 4;
-  display: none; align-items: center; gap: 6px; padding: 6px; max-width: calc(100% - 24px); overflow-x: auto;
-  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r);
+/* Stage toolbar (also the full-screen bar) */
+.stage-bar {
+  display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap;
+  padding: 6px 10px; border-top: 1px solid var(--line); background: var(--surface);
   transition: opacity 260ms var(--ease), transform 260ms var(--ease);
 }
-.fs-bar .seg > button { height: 30px; padding: 0 8px; font-size: 12.5px; white-space: nowrap; }
-@media (max-width: 640px) {
-  .fs-bar { flex-wrap: wrap; justify-content: center; width: calc(100% - 24px); overflow: visible; }
-  .fs-bar .fs-sep { display: none; }
-  .is-fs .view-tag { bottom: 116px; }
-}
+.stage-bar.disabled { opacity: .45; pointer-events: none; }
+.stage-bar .btn, .stage-bar .seg > button { height: 30px; font-size: 12.5px; }
+.stage-bar .seg > button { padding: 0 9px; white-space: nowrap; }
+.fs-only { display: none; align-items: center; gap: 6px; }
 .fs-count { font: 500 12.5px var(--mono); min-width: 56px; text-align: center; font-variant-numeric: tabular-nums; }
 .fs-sep { width: 1px; height: 20px; background: var(--line); flex: none; }
-.is-fs .fs-bar { display: flex; }
-.is-fs .fs-btn { display: none; }
-.is-fs.fs-idle .fs-bar { opacity: 0; transform: translate(-50%, 8px); pointer-events: none; }
+.stage.is-fs { grid-template-rows: 1fr auto; background: var(--stage); animation: fadeIn 180ms var(--ease); }
+.is-fs .fs-only { display: inline-flex; }
+.is-fs .stage-bar {
+  position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%); z-index: 4;
+  border: 1px solid var(--line-strong); border-radius: var(--r); max-width: calc(100% - 24px);
+}
+.is-fs.fs-idle .stage-bar { opacity: 0; transform: translate(-50%, 8px); pointer-events: none; }
 .is-fs.fs-idle, .is-fs.fs-idle canvas { cursor: none; }
-.is-fs .view-tag { bottom: 70px; }
-.stage.is-fs { background: var(--stage); animation: fadeIn 180ms var(--ease); }
+.is-fs .view-tag { bottom: 104px; }
 .stage:fullscreen { width: 100vw; height: 100vh; }
 body.pseudo-fs .stage { position: fixed; inset: 0; z-index: 50; }
 body.pseudo-fs { overflow: hidden; }
+
+/* Top bar: modes and menu */
+.mode-tabs { display: flex; gap: 2px; margin-left: 10px; padding-left: 14px; border-left: 1px solid var(--line); height: 100%; }
+.mode-tabs > button {
+  display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; border: 0; background: none; cursor: pointer;
+  color: var(--muted); font-weight: 500; box-shadow: inset 0 -2px 0 transparent;
+  transition: color var(--dur) var(--ease), box-shadow 240ms var(--ease);
+}
+.mode-tabs > button:hover { color: var(--ink); }
+.mode-tabs > button[aria-selected="true"] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent-fill); }
+.menu-wrap { position: relative; }
+.menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; min-width: 230px; padding: 6px;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: 6px; display: grid; gap: 2px;
+  animation: dlgIn 160ms var(--ease);
+}
+.menu-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 8px; font-size: 13px; color: var(--ink-2); }
+.menu-row .seg > button { height: 28px; padding: 0 9px; }
+.menu-item {
+  display: flex; align-items: center; gap: 8px; padding: 8px; border: 0; background: none; border-radius: var(--r);
+  cursor: pointer; color: var(--ink); text-decoration: none; font-size: 13px; text-align: left;
+}
+.menu-item:hover { background: var(--surface-2); }
+
+/* Panes and cards */
+.pane[hidden] { display: none; }
+.pane { animation: fadeIn 200ms var(--ease); }
+.card .row { display: flex; gap: 8px; align-items: center; }
+.card .row + .row { margin-top: 8px; }
+.card .row .btn { flex: none; }
+.select-wrap.grow { flex: 1; min-width: 0; }
+.select-wrap.grow select { width: 100%; max-width: none; }
+.card-head { display: flex; align-items: baseline; gap: 8px; }
+.card-head .acc-sub { margin-left: auto; font: 400 12px var(--mono); color: var(--muted); text-transform: none; letter-spacing: 0; }
+.card .acc-content { display: grid; gap: 14px; }
+.room-summary { margin: 8px 0 0; font: 12px var(--mono); color: var(--muted); }
+.calib-card p { margin: 0 0 10px; color: var(--ink-2); }
+.adv { border-top: 1px dashed var(--line); }
+.adv-head {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 10px 0 2px; border: 0; background: none;
+  cursor: pointer; color: var(--muted); font-size: 12.5px; text-align: left;
+}
+.adv-head:hover { color: var(--ink); }
+.adv-head .ic { width: 15px; height: 15px; transition: transform 220ms var(--ease); }
+.adv[data-open="false"] .adv-head .ic { transform: rotate(-90deg); }
+.adv[data-open="false"] > .acc-body { grid-template-rows: 0fr; }
+.adv .acc-content { padding: 10px 0 0; display: grid; gap: 14px; }
+.dl-row { display: flex; gap: 6px; }
+.dl-row select { width: 100%; max-width: none; }
+.dl-custom { display: flex; gap: 6px; align-items: center; margin-top: 6px; font: 12.5px var(--mono); }
+.dl-custom input { width: 86px; height: 30px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--bg); color: var(--ink); font: inherit; }
 
 /* Compare */
 .compare-ui { position: absolute; inset: 0; pointer-events: none; }
@@ -383,21 +433,19 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 
 /* ---------- Responsive ---------- */
 @media (max-width: 1180px) {
-  .bar .btn:not(.icon) span, .seg > button span { display: none; }
-  .bar .btn:not(.icon) { padding: 0 8px; }
-  .seg > button { padding: 0 9px; }
+  .stage-bar .btn:not(.icon) span, .stage-bar .seg > button span { display: none; }
+  .stage-bar .btn:not(.icon) { padding: 0 8px; }
   .layout { grid-template-columns: 104px minmax(0, 1fr) 300px; }
 }
 @media (max-width: 860px) {
   body { grid-template-rows: auto 1fr auto; height: auto; min-height: 100%; }
   .bar { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 8px; }
   .brand-name { display: none; }
-  .profile-group { padding-left: 0; border-left: 0; flex: 1; min-width: 0; }
-  .select-wrap { flex: 1; min-width: 0; }
-  .select-wrap select { max-width: none; width: 100%; }
-  .bar-group.end { margin-left: 0; }
-  .view-group { order: 3; width: 100%; }
-  .layout { grid-template-columns: 1fr; grid-template-rows: auto 62vh auto; overflow: visible; }
+  .mode-tabs { order: 3; width: 100%; margin: 0; padding: 0; border: 0; height: 36px; }
+  .mode-tabs > button { flex: 1; justify-content: center; }
+  .bar-group.end { margin-left: auto; }
+  .bar .btn.primary span { display: none; }
+  .layout { grid-template-columns: 1fr; grid-template-rows: auto 70vh auto; overflow: visible; }
   .slides { border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; }
   .slide-list { display: flex; padding: 8px 12px; }
   .slide-list li { flex: 0 0 96px; }

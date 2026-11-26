@@ -70,6 +70,14 @@ uniform vec4 uWin;            // window rect
 uniform float uCeil;          // ceiling y
 uniform float uTrunk;         // cable trunking y
 uniform float uFloor;         // floor line y
+uniform vec4 uDesk;           // desk in front of the wall
+uniform vec3 uWall;           // wall albedo (linear)
+uniform int uSurface;         // 0 screen, 1 bare wall
+uniform sampler2D uAmbTex;    // photo view: ambient layer
+uniform sampler2D uProjTex;   // photo view: projector white layer
+uniform vec2 uPhotoSize;
+uniform vec2 uCenter;          // centre of the comparison panel
+uniform float uKA, uKP, uPhotoRef;
 uniform vec3 uStage;          // background for compare panel (sRGB)
 uniform vec3 uAdapt;          // viewer's chromatic adaptation white
 in vec2 vUv;
@@ -112,6 +120,14 @@ void surface(vec2 p, out vec3 albedo, out float spec, out vec3 emit) {
   spec = 0.0;
   emit = vec3(0.0);
   vec2 hs = uScreen;
+  // teacher's desk standing in front of everything
+  if (inRect(p, uDesk)) {
+    if (p.y < uDesk.y + 0.035) { albedo = vec3(0.5, 0.42, 0.33); return; }
+    float grain = 0.92 + 0.08 * vnoise(vec2(p.x * 9.0, p.y * 140.0));
+    albedo = vec3(0.34, 0.26, 0.19) * grain;
+    return;
+  }
+  if (uSurface == 0) {
   // matte screen
   if (abs(p.x) <= hs.x && abs(p.y) <= hs.y) {
     float tex = 0.985 + 0.015 * vnoise(p * 900.0);
@@ -135,6 +151,7 @@ void surface(vec2 p, out vec3 albedo, out float spec, out vec3 emit) {
     albedo = vec3(0.025 + 0.05 * pow(sin(t * 3.14159), 4.0));
     if (abs(p.x) > hs.x + 0.06) albedo = vec3(0.06);
     return;
+  }
   }
   // whiteboard
   if (inRect(p, uWB)) {
@@ -186,7 +203,7 @@ void surface(vec2 p, out vec3 albedo, out float spec, out vec3 emit) {
     return;
   }
   float n = vnoise(p * 60.0) * 0.5 + vnoise(p * 210.0) * 0.5;
-  albedo = vec3(0.8, 0.795, 0.78) * (0.975 + 0.05 * n);
+  albedo = uWall * (0.975 + 0.05 * n);
 }
 
 vec3 shade(vec2 p) {
@@ -224,12 +241,31 @@ void main() {
     return;
   }
   vec2 p = uCam.xy + (vUv - 0.5) * vec2(2.0 * uCam.z, 2.0 * uCam.z / uAspect);
+  if (uMode == 2 && vUv.x >= uSplit) {
+    // photo view: world coordinates are photo pixels
+    vec2 tc = p / uPhotoSize;
+    if (tc.x < 0.0 || tc.y < 0.0 || tc.x > 1.0 || tc.y > 1.0) { outColor = vec4(uStage, 1.0); return; }
+    vec3 amb = toLin(texture(uAmbTex, tc).rgb);
+    vec3 pw = toLin(texture(uProjTex, tc).rgb);
+    vec3 q = uHinv * vec3(p, 1.0);
+    vec2 uv = q.xy / q.z;
+    vec3 col = vec3(0.0);
+    if (q.z > 0.0 && uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0) {
+      vec3 s = texture(uSlide, uv).rgb;
+      if (uDecode == 1) s = s * s;
+      s = pow(max(s, 0.0), vec3(uGamma));
+      col = max(uProj * s, 0.0);
+    }
+    vec3 L = (amb * uKA + pw * uKP * col * uWarm) / uPhotoRef;
+    outColor = vec4(toSrgb(clamp(tonemap(L), 0.0, 1.0)), 1.0);
+    return;
+  }
   if (vUv.x < uSplit) {
     // "on your laptop": the original slide fitted into the screen rectangle
     vec2 hs = uScreen;
     float sa = hs.x / hs.y;
     vec2 half_ = sa > uSlideAspect ? vec2(hs.y * uSlideAspect, hs.y) : vec2(hs.x, hs.x / uSlideAspect);
-    vec2 uv = (p + half_) / (2.0 * half_);
+    vec2 uv = (p - uCenter + half_) / (2.0 * half_);
     vec3 c = uStage;
     if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) c = texture(uOrig, uv).rgb;
     outColor = vec4(c, 1.0);

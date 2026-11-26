@@ -3,6 +3,7 @@ import { store, BUILTIN_PROFILES, sanitizeParams } from '../state.js';
 import { t, onLang, getLang } from '../i18n.js';
 import { listProfiles, getProfile, putProfile, deleteProfile, newId, blobToDataURL, dataURLToBlob, isPersistent } from '../store.js';
 import { toast, wireDialog } from './motion.js';
+import { setRoomPhoto, clearRoomPhoto } from '../photoview.js';
 
 const $ = (id) => document.getElementById(id);
 let userProfiles = [];
@@ -12,20 +13,21 @@ function profileName(p) { return p.nameKey ? t(p.nameKey) : p.name; }
 
 async function refresh() {
   userProfiles = await listProfiles();
-  const sel = $('profileSelect');
-  sel.innerHTML = '';
-  const g1 = document.createElement('optgroup');
-  g1.label = t('profiles.builtin');
-  for (const p of BUILTIN_PROFILES) g1.append(new Option(profileName(p), p.id));
-  sel.append(g1);
-  if (userProfiles.length) {
-    const g2 = document.createElement('optgroup');
-    g2.label = t('profiles.mine');
-    for (const p of userProfiles) g2.append(new Option(p.name, p.id));
-    sel.append(g2);
+  for (const sel of document.querySelectorAll('select.profile-select')) {
+    sel.innerHTML = '';
+    if (userProfiles.length) {
+      const g2 = document.createElement('optgroup');
+      g2.label = t('profiles.mine');
+      for (const p of userProfiles) g2.append(new Option(p.name, p.id));
+      sel.append(g2);
+    }
+    const g1 = document.createElement('optgroup');
+    g1.label = t('profiles.builtin');
+    for (const p of BUILTIN_PROFILES) g1.append(new Option(profileName(p), p.id));
+    sel.append(g1);
+    sel.value = store.state.profileId;
+    if (sel.value !== store.state.profileId) sel.value = 'builtin:reference';
   }
-  sel.value = store.state.profileId;
-  if (sel.value !== store.state.profileId) sel.value = 'builtin:reference';
   updateDirty();
 }
 
@@ -35,17 +37,24 @@ function updateDirty() {
 
 export async function applyProfile(id) {
   const b = BUILTIN_PROFILES.find((p) => p.id === id);
-  if (b) { store.setParams(JSON.parse(JSON.stringify(b.params)), id); return; }
+  if (b) { store.setParams(JSON.parse(JSON.stringify(b.params)), id); clearRoomPhoto(); return; }
   const p = await getProfile(id);
-  if (p) store.setParams(p.params, id);
+  if (!p) return;
+  store.setParams(p.params, id);
+  if (p.layers && p.params && p.params.calib) await setRoomPhoto(p.layers, p.params.calib, p.photo);
+  else clearRoomPhoto();
 }
 
 /** Save the current parameters, optionally with a calibration photo (Blob). */
 export async function saveProfile(name, { overwrite = false, photo = null } = {}) {
   const cur = userProfiles.find((p) => p.id === store.state.profileId);
+  // the room photo travels with the profile so the photo view can be restored
+  const ph = store.state.params.calib && store.state.photo ? store.state.photo : null;
+  const roomPhoto = photo || (ph ? ph.thumb : null);
+  const layers = ph ? ph.layers : null;
   const rec = overwrite && cur
-    ? { ...cur, name, params: store.state.params, photo: photo || cur.photo || null }
-    : { id: newId(), name, params: store.state.params, photo };
+    ? { ...cur, name, params: store.state.params, photo: roomPhoto || cur.photo || null, layers: layers || (store.state.params.calib ? cur.layers : null) || null }
+    : { id: newId(), name, params: store.state.params, photo: roomPhoto, layers };
   const saved = await putProfile({ ...rec, params: JSON.parse(JSON.stringify(rec.params)) });
   store.state.profileId = saved.id;
   store.state.dirty = false;
@@ -73,6 +82,7 @@ async function serialize(p) {
     params: p.params,
     createdAt: p.createdAt,
     photo: p.photo ? await blobToDataURL(p.photo) : null,
+    layers: p.layers ? { amb: await blobToDataURL(p.layers.amb), proj: await blobToDataURL(p.layers.proj) } : null,
   };
 }
 
@@ -90,6 +100,8 @@ async function importFile(file) {
         name: String(it.name || 'Imported').slice(0, 60),
         params: sanitizeParams(it.params),
         photo: it.photo && /^data:image\//.test(it.photo) ? await dataURLToBlob(it.photo) : null,
+        layers: it.layers && /^data:image\//.test(it.layers.amb || '') && /^data:image\//.test(it.layers.proj || '')
+          ? { amb: await dataURLToBlob(it.layers.amb), proj: await dataURLToBlob(it.layers.proj) } : null,
         createdAt: it.createdAt || Date.now(),
       });
       n++;
@@ -155,12 +167,13 @@ function renderManage() {
 }
 
 export function initProfiles() {
-  const sel = $('profileSelect');
-  sel.addEventListener('change', async () => {
-    if (store.state.dirty && !confirm(t('profiles.discard'))) { sel.value = store.state.profileId; return; }
-    await applyProfile(sel.value);
-    updateDirty();
-  });
+  for (const sel of document.querySelectorAll('select.profile-select')) {
+    sel.addEventListener('change', async () => {
+      if (store.state.dirty && !confirm(t('profiles.discard'))) { sel.value = store.state.profileId; return; }
+      await applyProfile(sel.value);
+      await refresh();
+    });
+  }
   store.subscribe((what) => { if (what === 'params' || what === 'profile') updateDirty(); });
   onLang(() => { refresh(); renderManage(); });
 

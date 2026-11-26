@@ -53,6 +53,7 @@
       <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/></symbol>
       <symbol id="i-prev" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
       <symbol id="i-next" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+      <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></symbol>
       <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/></symbol>
     </defs>
   </svg>
@@ -63,34 +64,29 @@
       <span class="brand-name" data-i18n="app.name">Projection Simulator</span>
     </div>
 
-    <div class="bar-group profile-group">
-      <label class="sr-only" for="profileSelect" data-i18n="profiles.label">Profile</label>
-      <div class="select-wrap">
-        <select id="profileSelect"></select>
-        <svg class="ic"><use href="#i-chev"/></svg>
-      </div>
-      <span class="dirty-dot" id="dirtyDot" hidden data-i18n-title="profiles.unsaved" title="Unsaved changes"></span>
-      <button class="btn icon" id="saveProfileBtn" data-i18n-title="profiles.save" title="Save profile"><svg class="ic"><use href="#i-save"/></svg></button>
-      <button class="btn icon" id="manageProfilesBtn" data-i18n-title="profiles.manage" title="Manage profiles"><svg class="ic"><use href="#i-list"/></svg></button>
-    </div>
-
-    <div class="bar-group view-group">
-      <div class="seg" role="radiogroup" data-i18n-aria="view.label" aria-label="View">
-        <button role="radio" data-view="room" aria-checked="true"><svg class="ic"><use href="#i-room"/></svg><span data-i18n="view.room">Room</span></button>
-        <button role="radio" data-view="screen" aria-checked="false"><svg class="ic"><use href="#i-screen"/></svg><span data-i18n="view.screen">Screen</span></button>
-      </div>
-      <button class="btn toggle" id="compareBtn" aria-pressed="false" data-i18n-title="view.compareHint" title="Compare with the original"><svg class="ic"><use href="#i-compare"/></svg><span data-i18n="view.compare">Compare</span></button>
-      <button class="btn toggle" id="safeBtn" aria-pressed="true" data-i18n-title="view.safeHint" title="Show safe zone"><svg class="ic"><use href="#i-safe"/></svg><span data-i18n="view.safe">Safe zone</span></button>
-      <button class="btn toggle" id="heatBtn" aria-pressed="false" data-i18n-title="view.heatHint" title="Mark hard-to-read areas"><svg class="ic"><use href="#i-heat"/></svg><span data-i18n="view.heat">Problems</span></button>
+    <div class="mode-tabs" role="tablist" data-i18n-aria="mode.label" aria-label="Mode">
+      <button role="tab" data-mode="check" aria-selected="true"><svg class="ic"><use href="#i-play"/></svg><span data-i18n="mode.check">Check slides</span></button>
+      <button role="tab" data-mode="setup" aria-selected="false"><svg class="ic"><use href="#i-target"/></svg><span data-i18n="mode.setup">Set up the room</span></button>
     </div>
 
     <div class="bar-group end">
-      <button class="btn" id="calibrateBtn"><svg class="ic"><use href="#i-target"/></svg><span data-i18n="calib.open">Calibrate</span></button>
       <button class="btn primary" id="openBtn"><svg class="ic"><use href="#i-open"/></svg><span data-i18n="file.open">Open slides</span></button>
       <input type="file" id="fileInput" accept=".png,.jpg,.jpeg,.webp,.pdf,.pptx,image/png,image/jpeg,image/webp,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation" multiple hidden>
-      <button class="btn icon lang" id="langBtn" data-i18n-title="ui.language" title="Language"><span id="langLabel">TR</span></button>
-      <button class="btn icon" id="themeBtn" data-i18n-title="ui.theme" title="Theme"><svg class="ic"><use id="themeIcon" href="#i-auto"/></svg></button>
-      <button class="btn icon" id="aboutBtn" data-i18n-title="about.title" title="About"><svg class="ic"><use href="#i-info"/></svg></button>
+      <div class="menu-wrap">
+        <button class="btn icon" id="menuBtn" aria-haspopup="true" aria-expanded="false" data-i18n-title="menu.label" title="Menu"><svg class="ic"><use href="#i-more"/></svg></button>
+        <div class="menu" id="menu" hidden>
+          <div class="menu-row"><span data-i18n="ui.language">Language</span>
+            <div class="seg" role="radiogroup"><button role="radio" data-lang="tr">TR</button><button role="radio" data-lang="en">EN</button></div></div>
+          <div class="menu-row"><span data-i18n="ui.theme">Theme</span>
+            <div class="seg" role="radiogroup">
+              <button role="radio" data-theme-set="system" data-i18n-title="theme.system" title="System"><svg class="ic"><use href="#i-auto"/></svg></button>
+              <button role="radio" data-theme-set="light" data-i18n-title="theme.light" title="Light"><svg class="ic"><use href="#i-sun"/></svg></button>
+              <button role="radio" data-theme-set="dark" data-i18n-title="theme.dark" title="Dark"><svg class="ic"><use href="#i-moon"/></svg></button>
+            </div></div>
+          <button class="menu-item" id="aboutBtn"><svg class="ic"><use href="#i-info"/></svg><span data-i18n="about.title">About</span></button>
+          <a class="menu-item" href="https://github.com/yavuzyunusoglu/projection-simulator" target="_blank" rel="noopener"><svg class="ic"><use href="#i-open"/></svg><span>GitHub</span></a>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -127,34 +123,74 @@
         <div class="busy" id="busy" hidden><span class="busy-bar"></span><span id="busyText"></span></div>
         <div class="slide-badges" id="slideBadges"></div>
         <span class="view-tag" id="viewTag" hidden></span>
-        <button class="btn icon fs-btn" id="fsBtn" hidden data-i18n-title="fs.enter" title="Full screen (F)"><svg class="ic"><use id="fsIcon" href="#i-expand"/></svg></button>
-        <div class="fs-bar" id="fsBar" role="toolbar" data-i18n-aria="fs.toolbar" aria-label="Full screen controls">
+      </div>
+      <div class="stage-bar" id="stageBar" role="toolbar" data-i18n-aria="view.toolbar" aria-label="View">
+        <span class="fs-only">
           <button class="btn icon" data-fs="prev" data-i18n-title="fs.prev" title="Previous slide"><svg class="ic"><use href="#i-prev"/></svg></button>
           <span class="fs-count" id="fsCount">1 / 1</span>
           <button class="btn icon" data-fs="next" data-i18n-title="fs.next" title="Next slide"><svg class="ic"><use href="#i-next"/></svg></button>
           <span class="fs-sep"></span>
-          <div class="seg" role="radiogroup" data-i18n-aria="view.label" aria-label="View">
-            <button role="radio" data-fs-view="room" aria-checked="true"><svg class="ic"><use href="#i-room"/></svg></button>
-            <button role="radio" data-fs-view="screen" aria-checked="false"><svg class="ic"><use href="#i-screen"/></svg></button>
-          </div>
-          <div class="seg" role="group" id="fsDist"></div>
-          <span class="fs-sep"></span>
-          <button class="btn icon toggle" data-fs-toggle="compareBtn" data-i18n-title="view.compare" title="Compare"><svg class="ic"><use href="#i-compare"/></svg></button>
-          <button class="btn icon toggle" data-fs-toggle="safeBtn" data-i18n-title="view.safe" title="Safe zone"><svg class="ic"><use href="#i-safe"/></svg></button>
-          <button class="btn icon toggle" data-fs-toggle="heatBtn" data-i18n-title="view.heat" title="Problems"><svg class="ic"><use href="#i-heat"/></svg></button>
-          <span class="fs-sep"></span>
-          <button class="btn icon" data-fs="exit" data-i18n-title="fs.exit" title="Exit full screen (Esc)"><svg class="ic"><use href="#i-collapse"/></svg></button>
+        </span>
+        <div class="seg" id="viewSeg" role="radiogroup" data-i18n-aria="view.label" aria-label="View">
+          <button role="radio" data-view="room" aria-checked="true" data-i18n-title="view.roomHint" title="The room from your seat"><svg class="ic"><use href="#i-room"/></svg><span data-i18n="view.room">Room</span></button>
+          <button role="radio" data-view="screen" aria-checked="false" data-i18n-title="view.screenHint" title="Close-up of the picture"><svg class="ic"><use href="#i-screen"/></svg><span data-i18n="view.screen">Screen</span></button>
+          <button role="radio" data-view="photo" aria-checked="false" hidden data-i18n-title="view.photoHint" title="Your slide in the calibration photo"><svg class="ic"><use href="#i-image"/></svg><span data-i18n="view.photo">Photo</span></button>
         </div>
+        <span class="fs-sep"></span>
+        <button class="btn toggle" id="compareBtn" aria-pressed="false" data-i18n-title="view.compareHint" title="Compare with the original"><svg class="ic"><use href="#i-compare"/></svg><span data-i18n="view.compare">Compare</span></button>
+        <button class="btn toggle" id="safeBtn" aria-pressed="true" data-i18n-title="view.safeHint" title="Show safe zone"><svg class="ic"><use href="#i-safe"/></svg><span data-i18n="view.safe">Safe zone</span></button>
+        <button class="btn toggle" id="heatBtn" aria-pressed="false" data-i18n-title="view.heatHint" title="Mark hard-to-read areas"><svg class="ic"><use href="#i-heat"/></svg><span data-i18n="view.heat">Problems</span></button>
+        <span class="fs-only">
+          <span class="fs-sep"></span>
+          <span class="seg" role="group" id="fsDist"></span>
+        </span>
+        <span class="fs-sep"></span>
+        <button class="btn icon" id="fsBtn" data-i18n-title="fs.enter" title="Full screen (F)"><svg class="ic"><use id="fsIcon" href="#i-expand"/></svg></button>
       </div>
       <div class="readout" id="readout"></div>
     </section>
 
     <aside class="panel" id="panel" data-i18n-aria="panel.label" aria-label="Settings">
-      <div id="controls"></div>
-      <section class="card findings" id="findings">
-        <h2 data-i18n="find.title">What to fix</h2>
-        <div id="findingsBody"></div>
-      </section>
+      <div class="pane" data-pane="check">
+        <section class="card">
+          <h2 data-i18n="room.title">Room</h2>
+          <div class="row">
+            <div class="select-wrap grow">
+              <select class="profile-select" data-i18n-aria="profiles.label" aria-label="Room"></select>
+              <svg class="ic"><use href="#i-chev"/></svg>
+            </div>
+            <button class="btn" data-goto="setup"><svg class="ic"><use href="#i-edit"/></svg><span data-i18n="room.edit">Edit</span></button>
+          </div>
+          <p class="room-summary" id="roomSummary"></p>
+        </section>
+        <div id="checkControls"></div>
+        <section class="card findings" id="findings">
+          <h2 data-i18n="find.title">What to fix</h2>
+          <div id="findingsBody"></div>
+        </section>
+      </div>
+      <div class="pane" data-pane="setup" hidden>
+        <section class="card">
+          <h2 data-i18n="room.title">Room</h2>
+          <div class="row">
+            <div class="select-wrap grow">
+              <select class="profile-select" data-i18n-aria="profiles.label" aria-label="Room"></select>
+              <svg class="ic"><use href="#i-chev"/></svg>
+            </div>
+            <span class="dirty-dot" id="dirtyDot" hidden data-i18n-title="profiles.unsaved" title="Unsaved changes"></span>
+          </div>
+          <div class="row">
+            <button class="btn primary" id="saveProfileBtn"><svg class="ic"><use href="#i-save"/></svg><span data-i18n="profiles.save">Save room</span></button>
+            <button class="btn" id="manageProfilesBtn"><svg class="ic"><use href="#i-list"/></svg><span data-i18n="profiles.manageShort">All rooms</span></button>
+          </div>
+        </section>
+        <section class="card calib-card">
+          <h2 data-i18n="calib.cardTitle">Calibration</h2>
+          <p class="small" id="calibSummary"></p>
+          <button class="btn" id="calibrateBtn"><svg class="ic"><use href="#i-target"/></svg><span data-i18n="calib.open">Calibrate from a photo</span></button>
+        </section>
+        <div id="setupControls"></div>
+      </div>
     </aside>
   </main>
 
