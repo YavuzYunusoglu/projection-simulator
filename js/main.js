@@ -102,13 +102,12 @@ function lerpInto(cur, tgt, k) {
   return moving;
 }
 
+// Soft lamp warm-up, played only when a new file or sample is opened.
 function warmFactor(now) {
-  if (reducedMotion()) return 1;
-  const e = (now - warmStart) / 1100;
+  if (reducedMotion() || !warmStart) return 1;
+  const e = (now - warmStart) / 450;
   if (e >= 1) return 1;
-  // lamp strike: a couple of flickers, then an ease-in to full brightness
-  const flicker = e < 0.16 ? (Math.sin(e * 140) > 0.2 ? 0.55 : 0.18) : 1;
-  return Math.min(1, 0.12 + 0.88 * (1 - Math.pow(1 - e, 3))) * flicker;
+  return 0.55 + 0.45 * (1 - Math.pow(1 - e, 3));
 }
 
 function frame(now) {
@@ -185,10 +184,17 @@ function updatePanels() {
   const slide = store.state.slides[store.state.current];
   renderReadout($('readout'), slide ? scene : null, store.state.params);
   renderFindings($('findingsBody'), scene, store.state.params, analysis, slide);
+  // badges: only touch the DOM when the set (or language) changed
   const badges = $('slideBadges');
+  const list = (slide && slide.warnings) || [];
+  const key = getLang() + '|' + list.join(',');
+  if (badges.dataset.key === key) return;
+  const prev = new Set((badges.dataset.key || '').split('|')[1]?.split(',').filter(Boolean));
+  badges.dataset.key = key;
   badges.innerHTML = '';
-  for (const w of (slide && slide.warnings) || []) {
-    badges.insertAdjacentHTML('beforeend', `<span class="badge"><svg class="ic"><use href="#i-warn"/></svg>${t('pptx.' + w + 'Short')}</span>`);
+  for (const w of list) {
+    const cls = prev.has(w) ? 'badge' : 'badge enter';
+    badges.insertAdjacentHTML('beforeend', `<span class="${cls}"><svg class="ic"><use href="#i-warn"/></svg>${t('pptx.' + w + 'Short')}</span>`);
   }
 }
 
@@ -204,15 +210,20 @@ async function showSlide() {
   analysis = null;
   if (renderer) renderer.setSlide(img);
   document.body.classList.add('has-slide');
-  warmStart = performance.now();
-  overlay.revealSafe();
+  if (freshDeck) {
+    // effects only when a new deck is opened, never while flipping through slides
+    freshDeck = false;
+    warmStart = performance.now();
+    overlay.revealSafe();
+  }
   buildTarget();
   updatePanels();
   scheduleAnalysis();
 }
 
+let freshDeck = false;
 store.subscribe((what) => {
-  if (what === 'slides') renderSlideList($('slideList'));
+  if (what === 'slides') { freshDeck = true; renderSlideList($('slideList')); }
   if (what === 'slide') showSlide();
   if (what === 'params' || what === 'profile') {
     buildTarget();

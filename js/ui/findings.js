@@ -20,36 +20,61 @@ export function renderReadout(el, scene, params) {
 export function renderFindings(el, scene, params, analysis, slide) {
   if (!scene || !slide) {
     el.innerHTML = `<p class="muted small">${t('find.empty')}</p>`;
+    el._built = false;
     return;
   }
   const out = [];
   const c = scene.light.effContrast;
-  if (c < 2.5) out.push(['bad', t('find.contrastBad', { c: num(c, 1) })]);
-  else if (c < 5) out.push(['warn', t('find.contrastWarn', { c: num(c, 1) })]);
-  else out.push(['ok', t('find.contrastOk', { c: num(c, c < 10 ? 1 : 0) })]);
+  if (c < 2.5) out.push(['contrast', 'bad', t('find.contrastBad', { c: num(c, 1) })]);
+  else if (c < 5) out.push(['contrast', 'warn', t('find.contrastWarn', { c: num(c, 1) })]);
+  else out.push(['contrast', 'ok', t('find.contrastOk', { c: num(c, c < 10 ? 1 : 0) })]);
 
   const cuts = scene.cuts;
   const sides = ['left', 'right', 'top', 'bottom'].filter((s) => cuts[s] > 0.005);
   if (sides.length) {
     const parts = sides.map((s) => `${t('side.' + s)} ${num(cuts[s] * 100, 1)}%`).join(', ');
-    out.push(['bad', t('find.cut', { parts })]);
-  } else out.push(['ok', t('find.noCut')]);
+    out.push(['cut', 'bad', t('find.cut', { parts })]);
+  } else out.push(['cut', 'ok', t('find.noCut')]);
 
-  out.push([scene.minPt > 32 ? 'warn' : 'ok', t('find.font', { pt: num(Math.ceil(scene.minPt)), d: num(params.viewer.distance, 1) })]);
+  out.push(['font', scene.minPt > 32 ? 'warn' : 'ok', t('find.font', { pt: num(Math.ceil(scene.minPt)), d: num(params.viewer.distance, 1) })]);
 
   if (analysis) {
     const s = analysis.summary;
-    if (s.contrastBad + s.contrastWarn) out.push([s.contrastBad ? 'bad' : 'warn', t('find.areasContrast', { n: s.contrastBad + s.contrastWarn })]);
-    if (s.blurBad + s.blurWarn) out.push([s.blurBad ? 'bad' : 'warn', t('find.areasBlur', { n: s.blurBad + s.blurWarn })]);
-    if (s.cut) out.push(['bad', t('find.areasCut', { n: s.cut })]);
-    if (!s.contrastBad && !s.contrastWarn && !s.blurBad && !s.blurWarn && !s.cut && s.content) out.push(['ok', t('find.areasOk')]);
+    if (s.contrastBad + s.contrastWarn) out.push(['aContrast', s.contrastBad ? 'bad' : 'warn', t('find.areasContrast', { n: s.contrastBad + s.contrastWarn })]);
+    if (s.blurBad + s.blurWarn) out.push(['aBlur', s.blurBad ? 'bad' : 'warn', t('find.areasBlur', { n: s.blurBad + s.blurWarn })]);
+    if (s.cut) out.push(['aCut', 'bad', t('find.areasCut', { n: s.cut })]);
+    if (!s.contrastBad && !s.contrastWarn && !s.blurBad && !s.blurWarn && !s.cut && s.content) out.push(['aOk', 'ok', t('find.areasOk')]);
   }
-  for (const w of slide.warnings || []) out.push(['warn', t('pptx.' + w)]);
+  for (const w of slide.warnings || []) out.push(['pptx-' + w, 'warn', t('pptx.' + w)]);
 
-  el.innerHTML = `<ul class="find-list">${out.map(([cls, txt], i) => `<li class="${cls}" style="animation-delay:${i * 40}ms"><span>${txt}</span></li>`).join('')}</ul>
-    <div class="safe-map"><canvas id="safeMap"></canvas></div>
-    <p class="muted small">${t('find.safeMapHint')}</p>`;
-  drawSafeMap(el.querySelector('#safeMap'), scene, slide);
+  // Build the skeleton once; afterwards update items in place so nothing re-animates.
+  if (!el._built) {
+    el.innerHTML = `<ul class="find-list"></ul><div class="safe-map"><canvas></canvas></div><p class="muted small"></p>`;
+    el._built = true;
+  }
+  const ul = el.querySelector('.find-list');
+  const existing = new Map([...ul.children].map((li) => [li.dataset.key, li]));
+  let newIdx = 0;
+  out.forEach(([key, cls, txt], i) => {
+    let li = existing.get(key);
+    if (li) existing.delete(key);
+    else {
+      li = document.createElement('li');
+      li.dataset.key = key;
+      li.innerHTML = '<span></span>';
+      li.classList.add('enter');
+      li.style.animationDelay = `${newIdx++ * 40}ms`;
+      // drop the class once played, so moving the item later can't replay it
+      li.addEventListener('animationend', () => li.classList.remove('enter'), { once: true });
+    }
+    li.className = `${cls}${li.classList.contains('enter') ? ' enter' : ''}`;
+    const span = li.firstElementChild;
+    if (span.innerHTML !== txt) span.innerHTML = txt;
+    if (ul.children[i] !== li) ul.insertBefore(li, ul.children[i] || null);
+  });
+  for (const li of existing.values()) li.remove();
+  el.querySelector('p').textContent = t('find.safeMapHint');
+  drawSafeMap(el.querySelector('.safe-map canvas'), scene, slide);
 }
 
 function drawSafeMap(canvas, scene, slide) {

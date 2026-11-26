@@ -160,8 +160,9 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.005em; }
 .badge {
   display: inline-flex; gap: 6px; align-items: center; padding: 4px 8px; font-size: 12px;
   background: var(--surface); border: 1px solid var(--warn); border-radius: var(--r); color: var(--ink);
-  pointer-events: auto; animation: slideIn 260ms var(--ease) both;
+  pointer-events: auto;
 }
+.badge.enter { animation: slideIn 260ms var(--ease) both; }
 .badge .ic { width: 15px; height: 15px; color: var(--warn); }
 
 /* Compare */
@@ -238,7 +239,9 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 .card { padding: 14px; border-bottom: 1px solid var(--line); }
 .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 500; margin-bottom: 10px; }
 .find-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.find-list li { display: grid; grid-template-columns: 10px 1fr; gap: 10px; align-items: start; font-size: 13px; animation: slideIn 300ms var(--ease) both; }
+.find-list li { display: grid; grid-template-columns: 10px 1fr; gap: 10px; align-items: start; font-size: 13px; transition: color var(--dur) var(--ease); }
+.find-list li.enter { animation: slideIn 300ms var(--ease) both; }
+.find-list li::before { transition: background-color 240ms var(--ease); }
 .find-list li::before { content: ''; width: 10px; height: 10px; margin-top: 4px; border-radius: 2px; background: var(--ok); }
 .find-list li.warn::before { background: var(--warn); }
 .find-list li.bad::before { background: var(--bad); }
