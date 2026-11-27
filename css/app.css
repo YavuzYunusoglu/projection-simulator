@@ -107,6 +107,11 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.005em; }
 #glCanvas { opacity: 0; transition: opacity 300ms var(--ease); }
 .has-slide #glCanvas { opacity: 1; }
 #overlayCanvas { pointer-events: none; }
+.lens-ring { position: absolute; left: 0; top: 0; width: 180px; height: 180px; margin: -90px 0 0 -90px; border-radius: 50%;
+  border: 2px solid var(--accent); box-shadow: 0 0 0 1px rgba(0,0,0,.35); pointer-events: none; will-change: transform; }
+.lens-ring span { position: absolute; left: 50%; top: 100%; transform: translate(-50%, 6px); white-space: nowrap;
+  font: 500 11px/1 var(--font-mono, monospace); background: var(--accent); color: #1b1407; padding: 3px 6px; border-radius: 3px; }
+.stage-frame.lens-on { cursor: none; }
 
 .readout {
   display: flex; flex-wrap: wrap; gap: 0; border-top: 1px solid var(--line); background: var(--surface);
@@ -477,3 +482,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
 }
+
+.ctl.dim .ctl-val { opacity: .5; }
+.ctl.dim input[type=range] { filter: saturate(.3); }

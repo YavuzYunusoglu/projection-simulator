@@ -75,7 +75,16 @@ export function projectionCorners(params, slideAspect) {
 }
 
 /** Lighting quantities derived from the parameters. */
-export function computeLighting(params, cornersMeters, area) {
+/**
+ * Light scattered inside the lens and the room from the bright parts of the picture
+ * (what limits "ANSI" / in-picture contrast). A 50 % checkerboard measures white/black = ansi,
+ * so the stray light per unit of picture brightness is 2 / ansi of the white level.
+ */
+export function flareLux(Epw, ansi, apl) {
+  return Epw * (2 / Math.max(ansi || 250, 5)) * Math.max(0, apl);
+}
+
+export function computeLighting(params, cornersMeters, area, apl = 0.5) {
   const p = params.projector, r = params.room;
   const lumens = p.lumens * (p.lampHealth / 100);
   const uniformity = 0.88; // average over the frame relative to centre-weighted output
@@ -89,9 +98,13 @@ export function computeLighting(params, cornersMeters, area) {
   const ambCol = rawAmb.map((v) => v / ambY);
   const tint = cctTint(p.colorTemp);
   const gain = params.screen.gain;
-  // Effective on-screen contrast for a full white vs full black frame
-  const effContrast = (Epw + Ea) / (Epb + Ea);
-  return { lumens, Epw, Epb, Ea, ambCol, tint, gain, effContrast };
+  // Contrast between white and black parts of a slide with this average picture level:
+  // native black + stray light from the bright parts + room light
+  const flare = flareLux(Epw, p.ansi, apl);
+  const effContrast = (Epw + flare + Ea) / (Epb + flare + Ea);
+  // share of the black level that the projector's native contrast is responsible for
+  const nativeShare = Epb / Math.max(1e-6, Epb + flare + Ea);
+  return { lumens, Epw, Epb, Ea, ambCol, tint, gain, effContrast, flare, apl, nativeShare };
 }
 
 const LUMA = [0.2126, 0.7152, 0.0722];
@@ -109,13 +122,13 @@ export function projectorMatrix(tint, sat = 1) {
  * How a sent colour (linear RGB) looks on the screen relative to the screen's white, as the
  * shader computes it (without the viewer's chromatic adaptation). Returns linear RGB.
  */
-export function simulateColor(rgb, { proj, gamma = 1, Epw, Epb, Ea, ambCol }) {
+export function simulateColor(rgb, { proj, gamma = 1, Epw, Epb, Ea, ambCol, flare = 0 }) {
   const s = rgb.map((v) => Math.pow(Math.max(v, 0), gamma));
   const out = [];
   for (let r = 0; r < 3; r++) {
     const col = Math.max(0, proj[r * 3] * s[0] + proj[r * 3 + 1] * s[1] + proj[r * 3 + 2] * s[2]);
     const black = proj[r * 3] + proj[r * 3 + 1] + proj[r * 3 + 2];
-    out.push((Ea * ambCol[r] + Epb * black + (Epw - Epb) * col) / (Epw + Ea));
+    out.push((Ea * ambCol[r] + (Epb + flare) * black + (Epw - Epb) * col) / (Epw + Ea));
   }
   return out;
 }

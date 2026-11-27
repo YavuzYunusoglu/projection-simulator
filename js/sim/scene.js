@@ -8,7 +8,7 @@ import { roomLayout } from './room.js';
 
 const UNIT = [[0, 0], [1, 0], [1, 1], [0, 1]];
 
-export function computeScene(params, slideW = 1920, slideH = 1080) {
+export function computeScene(params, slideW = 1920, slideH = 1080, apl = 0.5) {
   const aspect = slideW / slideH;
   const { w: sw, h: sh } = screenSize(params);
   const cornersN = projectionCorners(params, aspect);
@@ -17,7 +17,7 @@ export function computeScene(params, slideW = 1920, slideH = 1080) {
   const H = solveHomography(UNIT, cornersM); // slide uv -> wall metres
   const Hinv = invertH(H);
   const area = polygonArea(cornersM);
-  const light = computeLighting(params, cornersM, area);
+  const light = computeLighting(params, cornersM, area, apl);
 
   // Projected width/height (average of opposite edges)
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -51,12 +51,15 @@ export function computeScene(params, slideW = 1920, slideH = 1080) {
     : { left: 0, right: 0, top: 0, bottom: 0 };
 
   const native = NATIVE_RES[params.projector.native] || NATIVE_RES.wxga;
+  // the slide is fitted into the projector's panel: this many real pixels show it
+  const nativeW = Math.min(native[0], native[1] * aspect);
+  const nativePx = [Math.round(nativeW), Math.round(nativeW / aspect)];
   const blur = blurSigma({
     projWidthM: projW,
     slideWidthPx: slideW,
     distanceM: params.viewer.distance,
     acuity: params.viewer.acuity,
-    nativeWidthPx: Math.min(native[0], native[1] * aspect),
+    nativeWidthPx: nativeW,
     focusMm: params.projector.focusMm,
   });
   const minPt = minReadablePt({
@@ -69,7 +72,7 @@ export function computeScene(params, slideW = 1920, slideH = 1080) {
   return {
     aspect, slideW, slideH, screenW: sw, screenH: sh,
     cornersN, cornersM, H, Hinv, area, projW, projH,
-    light, visible, visibleFrac: Math.max(0, visibleFrac), safe, cuts, blur, minPt, occluders, isVisible, room, onWall,
+    light, visible, visibleFrac: Math.max(0, visibleFrac), safe, cuts, blur, minPt, occluders, isVisible, room, onWall, nativePx,
   };
 }
 

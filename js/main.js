@@ -59,11 +59,29 @@ function wallAlbedo(c) {
   return c.map((v) => Math.min(1, (1 + 0.45 * (v / y - 1)) * 0.78));
 }
 
+const displaySigma = (b, eye) => Math.sqrt(b.focus * b.focus + (eye ? b.eye * b.eye : 0));
+let slideApl = 0.5;
+
+// Average picture level (linear luminance) of a slide: drives the stray-light estimate.
+function averageLevel(img) {
+  try {
+    const c = document.createElement('canvas');
+    c.width = 32; c.height = 18;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, 0, 0, 32, 18);
+    const d = g.getImageData(0, 0, 32, 18).data;
+    let acc = 0;
+    const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    for (let i = 0; i < d.length; i += 4) acc += 0.2126 * lin(d[i]) + 0.7152 * lin(d[i + 1]) + 0.0722 * lin(d[i + 2]);
+    return acc / (d.length / 4);
+  } catch { return 0.5; }
+}
+
 function buildTarget() {
   const slide = store.state.slides[store.state.current];
   const p = store.state.params;
   const sw = slide ? slide.width : 1920, sh = slide ? slide.height : 1080;
-  scene = computeScene(p, sw, sh);
+  scene = computeScene(p, sw, sh, slideApl);
   const L = scene.light;
   const room = roomLayout(scene.screenW, scene.screenH, p.room.layout);
   const canvas = $('glCanvas');
@@ -78,19 +96,21 @@ function buildTarget() {
     ? p.projector.colorMatrix
     : projectorMatrix(L.tint, p.projector.saturation ?? 1);
   const lux = p.room.ambientLux;
-  // The eye largely adapts to what fills the view: mostly room-lit walls plus the bright
-  // screen (von Kries scaling, degree 0.85, room light weighted 3x for its larger area).
-  const pw = [0, 1, 2].map((r) => proj[r * 3] + proj[r * 3 + 1] + proj[r * 3 + 2]);
-  const wa = 3 * L.Ea;
-  const mixW = pw.map((v, i) => (L.Epw * v + wa * L.ambCol[i]) / (L.Epw + wa));
-  const mixY = 0.2126 * mixW[0] + 0.7152 * mixW[1] + 0.0722 * mixW[2];
-  const adapt = mixW.map((v) => 1 + 0.85 * (v / mixY - 1));
+  // The eye adapts to the room light (von Kries, degree 0.85), not to the projector: a bluish
+  // projector makes the picture look blue while walls keep their colour. In a dark room
+  // there is little to adapt to, so the adaptation fades out.
+  const kAd = 0.85 * L.Ea / (L.Ea + 25);
+  const adapt = L.ambCol.map((v) => 1 + kAd * (v - 1));
   target = {
     adapt,
     corners: scene.cornersM.flat(),
     Epw: L.Epw, Epb: L.Epb, Ea: L.Ea, ambCol: L.ambCol, proj, gamma: p.projector.gamma || 1,
-    // the blur effect is optional on screen (off by default); analysis always uses it
-    sigma: p.viewer.blur ? scene.blur.sigma : 0, cam, room: store.state.view === 'room' ? 1 : 0,
+    // the projector's own sharpness (panel pixels, focus) is always shown; the viewer's eye
+    // blur is optional on screen (off by default). Panel resolution is real resampling.
+    sigma: displaySigma(scene.blur, p.viewer.blur), native: scene.nativePx,
+    flareK: 2 / Math.max(5, p.projector.ansi || 250),
+    falloff: Math.min(0.6, Math.max(0, (p.projector.falloff ?? 20) / 100)),
+    cam, room: store.state.view === 'room' ? 1 : 0,
     curtain: 1 - Math.min(1, Math.max(0, Math.log10(lux + 1) / Math.log10(900))),
     screenW: scene.screenW, screenH: scene.screenH, gain: L.gain,
     wb: room.wb, win: room.win, ceil: room.ceil, trunk: room.trunk, floor: room.floor, desk: room.desk,
@@ -130,6 +150,7 @@ function buildTarget() {
   const tag = $('viewTag');
   tag.hidden = store.state.view !== 'room' || !slide;
   tag.textContent = t('view.seat', { d: num(p.viewer.distance, 1) });
+  if (lens.on) placeLens();
   kick();
 }
 
@@ -180,6 +201,7 @@ function frame(now) {
     ...current, H, Hinv, warm, time: now / 1000,
     split: store.state.compare ? compareSplit : -1,
     stage: srgbOf(cssVar('--stage')),
+    lens: lensState(),
   };
   renderer.render(U);
   overlay.draw(U, scene, store.state, store.state.overlays.heat ? analysis : null);
@@ -216,10 +238,10 @@ function runAnalysis() {
   if (!renderer || !slideImage || !target || !lastU) return;
   const W = 1920, Hh = Math.round(W / scene.aspect);
   const H = solveHomography(UNIT, chunk(target.corners));
-  const base = { ...lastU, ...target, photoMode: 0, H, Hinv: invertH(H), warm: 1, sigma: scene.blur.sigma };
+  const base = { ...lastU, ...target, lens: null, photoMode: 0, H, Hinv: invertH(H), warm: 1, sigma: displaySigma(scene.blur, true) };
   const sim = renderer.readSlideSpace(base, W, Hh);
   // contrast is judged without the viewer's blur (that is measured separately)
-  const sharpPx = renderer.readSlideSpace({ ...base, sigma: 0 }, W, Hh);
+  const sharpPx = renderer.readSlideSpace({ ...base, sigma: displaySigma(scene.blur, false) }, W, Hh);
   if (!sim || !sharpPx) return;
   const ds = downsample2(sim, W, Hh);
   const dsSharp = downsample2(sharpPx, W, Hh);
@@ -277,6 +299,7 @@ async function showSlide() {
   const img = await slide.image();
   if (store.state.slides[store.state.current] !== slide) return;
   slideImage = img;
+  slideApl = averageLevel(img);
   origLuma = null;
   analysis = null;
   if (renderer) renderer.setSlide(img);
@@ -358,6 +381,47 @@ setMode((() => { try { return localStorage.getItem(MODE_KEY) || 'check'; } catch
   menu.querySelectorAll('[data-theme-set]').forEach((b) => b.addEventListener('click', () => setThemePref(b.dataset.themeSet)));
   $('aboutBtn').addEventListener('click', close);
 })();
+
+// ---------- Magnifier ----------
+const LENS_R = 90; // css px
+const lens = { on: false, x: -1, y: -1, zoom: 4 };
+function lensState() {
+  if (!lens.on || lens.x < 0) return null;
+  const dpr = $('glCanvas').width / Math.max(1, $('stageFrame').clientWidth);
+  return { x: lens.x * dpr, y: lens.y * dpr, r: LENS_R * dpr, zoom: lens.zoom };
+}
+function placeLens() {
+  const ring = $('lensRing');
+  ring.hidden = !lens.on || lens.x < 0;
+  ring.style.transform = `translate(${lens.x}px, ${lens.y}px)`;
+  if (scene) $('lensTag').textContent = t('view.lensTag', { z: lens.zoom, w: scene.nativePx[0], h: scene.nativePx[1] });
+}
+function setLens(on) {
+  lens.on = on;
+  setPressed($('lensBtn'), on);
+  $('stageFrame').classList.toggle('lens-on', on);
+  if (on && lens.x < 0) {
+    const f = $('stageFrame');
+    lens.x = f.clientWidth / 2; lens.y = f.clientHeight / 2;
+  }
+  placeLens();
+  kick();
+}
+$('lensBtn').addEventListener('click', () => setLens(!lens.on));
+$('stageFrame').addEventListener('pointermove', (e) => {
+  if (!lens.on || e.pointerType === 'touch' && !e.isPrimary) return;
+  const r = $('stageFrame').getBoundingClientRect();
+  lens.x = e.clientX - r.left; lens.y = e.clientY - r.top;
+  placeLens();
+  kick();
+});
+$('stageFrame').addEventListener('wheel', (e) => {
+  if (!lens.on) return;
+  e.preventDefault();
+  lens.zoom = Math.min(8, Math.max(2, lens.zoom * (e.deltaY < 0 ? 2 : 0.5)));
+  placeLens();
+  kick();
+}, { passive: false });
 
 let compareSplit = 0.5;
 function setPressed(btn, on) { btn.setAttribute('aria-pressed', String(on)); }
@@ -449,6 +513,7 @@ window.addEventListener('drop', (e) => {
 window.addEventListener('keydown', (e) => {
   if (document.querySelector('dialog[open]') || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
   if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); toggleFullscreen(); return; }
+  if ((e.key === 'z' || e.key === 'Z') && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); setLens(!lens.on); return; }
   if (e.key === 'ArrowDown' || e.key === 'PageDown' || (e.key === 'ArrowRight' && !e.target.closest('.cmp-handle'))) { selectSlide(store.state.current + 1); }
   if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'ArrowLeft') { selectSlide(store.state.current - 1); }
 });

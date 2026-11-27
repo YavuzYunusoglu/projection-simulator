@@ -10,6 +10,7 @@ export default {
   ui: { language: 'Language', theme: 'Theme', close: 'Close', cancel: 'Cancel', save: 'Save', done: 'Done', advanced: 'Advanced' },
   theme: { system: 'System', light: 'Light', dark: 'Dark' },
   view: {
+    lensHint: 'Magnifier: see panel pixels and focus up close (Z)', lensTag: '{z}× · {w}×{h} px panel',
     label: 'View', room: 'Room', screen: 'Screen', compare: 'Compare', compareHint: 'Compare with the slide on your laptop',
     safe: 'Safe zone', safeHint: 'Show the area that lands on the screen', heat: 'Problems', heatHint: 'Mark hard-to-read areas',
     laptop: 'On your laptop', projected: 'Projected', toolbar: 'View', photo: 'Photo', opacity: 'Opacity', opacityHint: 'How much of the simulated slide covers the real photo',
@@ -29,6 +30,7 @@ export default {
   panel: { label: 'Settings' },
   sec: { room: 'Room light', projector: 'Projector', screen: 'Screen', picture: 'Picture', geometry: 'Position & keystone', viewer: 'Your seat', lightNow: 'Light right now', layout: 'Room layout' },
   ctl: {
+    ansi: 'In-picture contrast', gamma: 'Tone curve (gamma)', falloff: 'Corner darkening',
     ambient: 'Light on the screen', ambientColor: 'Light colour', lumens: 'Rated brightness', lamp: 'Lamp condition',
     contrast: 'Native contrast', colorTemp: 'Colour temperature', native: 'Native resolution', focus: 'Focus blur',
     screenWidth: 'Screen width', pictureWidth: 'Picture width on the wall', screenAspect: 'Screen shape', gain: 'Screen gain',
@@ -37,7 +39,12 @@ export default {
     distance: 'Viewing distance', acuity: 'Eyesight', blur: 'Blur effect', saturation: 'Saturation',
   },
   hint: {
-    ambient: 'Measured on the screen surface. Any light falling on the screen washes out the blacks.',
+    contrastNow: 'Under this room light it decides {p}% of the black level. It matters most in a dark room.',
+    contrastLow: 'Under this room light it decides only {p}% of the black level — room light and stray light dominate. Dim the room to see it matter.',
+    ansi: 'Light that scatters from the bright parts of the picture into the dark parts (ANSI checkerboard). Lowers contrast on bright slides even in a dark room.',
+    gamma: 'Above 1: mid-tones darker and more contrasty. Below 1: mid-tones lifted and washed out.',
+    falloff: 'How much darker the corners are than the centre.',
+        ambient: 'Measured on the screen surface. Any light falling on the screen washes out the blacks.',
     lamp: 'Older lamps often give 50–70% of the rated output.',
     colorTemp: 'Above 6500 K the image looks blue, below it looks yellow.',
     focus: 'How much a sharp edge spreads on the wall.',
@@ -46,7 +53,7 @@ export default {
     keystone: 'Trapezoid distortion from a tilted projector.',
     distance: 'Use the farthest seat you care about. The room view moves with it.',
     saturation: 'How vivid colours come out. Older projectors and lit rooms make them duller.',
-    blur: 'Shows the blur from viewing distance, projector resolution and focus on the picture. “What to fix” takes it into account either way.',
+    blur: 'Adds the blur of your eye at this distance. Projector resolution and focus are always shown (zoom in with the magnifier, Z). “What to fix” uses both either way.',
     surface: 'Calibration picks this for you. On a wall nothing is cut off, but the wall colour tints the picture.',
     desk: 'A desk in front hides the lower part of a low picture.',
   },

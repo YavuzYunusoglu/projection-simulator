@@ -1,3 +1,4 @@
+import { simulateColor, projectorMatrix } from '../js/sim/photometry.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -78,7 +79,7 @@ test('a centred, matching projection fills the screen exactly', () => {
   const p = baseParams();
   const c = projectionCorners(p, 16 / 9);
   [[0, 0], [1, 0], [1, 1], [0, 1]].forEach((q, i) => { close(c[i][0], q[0], 1e-9); close(c[i][1], q[1], 1e-9); });
-  const s = computeScene(p, 1920, 1080);
+  const s = computeScene(p, 1920, 1080, 0); // an all-black slide: no stray light
   close(s.visibleFrac, 1, 1e-9);
   close(s.cuts.right, 0, 0.01);
   // 3000 lm * 0.88 over 2 m × 1.125 m
@@ -91,8 +92,35 @@ test('ambient light lowers the effective contrast', () => {
   p.room.ambientLux = 300;
   const s = computeScene(p, 1920, 1080);
   const Epw = (3000 * 0.88) / 2.25;
-  close(s.light.effContrast, (Epw + 300) / (Epw / 2000 + 300), 1e-9);
+  const F = Epw * (2 / (p.projector.ansi || 250)) * 0.5;
+  close(s.light.effContrast, (Epw + F + 300) / (Epw / 2000 + F + 300), 1e-9);
   assert.ok(s.light.effContrast < 5);
+});
+
+test('stray light (ANSI contrast) lowers contrast on bright slides, even in a dark room', () => {
+  const p = baseParams();
+  p.room.ambientLux = 0;
+  p.projector.ansi = 200;
+  const dark = computeScene(p, 1920, 1080, 0.05).light.effContrast;
+  const bright = computeScene(p, 1920, 1080, 0.8).light.effContrast;
+  assert.ok(bright < dark, `${bright} < ${dark}`);
+  // half-white checkerboard comes out at about the ANSI figure
+  close(computeScene(p, 1920, 1080, 0.5).light.effContrast, 200, 25);
+});
+
+test('native contrast matters in a dark room and hardly at all in a lit one', () => {
+  const p = baseParams();
+  p.room.ambientLux = 0;
+  assert.ok(computeScene(p, 1920, 1080, 0).light.nativeShare > 0.9);
+  p.room.ambientLux = 300;
+  assert.ok(computeScene(p, 1920, 1080, 0.5).light.nativeShare < 0.02);
+});
+
+test('simulateColor: stray light lifts black', () => {
+  const env = { proj: projectorMatrix([1, 1, 1], 1), Epw: 1000, Epb: 1, Ea: 0, ambCol: [1, 1, 1] };
+  const a = simulateColor([0, 0, 0], env)[1];
+  const b = simulateColor([0, 0, 0], { ...env, flare: 5 })[1];
+  assert.ok(b > a * 3);
 });
 
 test('shifting the image right cuts the right side of the slide', () => {

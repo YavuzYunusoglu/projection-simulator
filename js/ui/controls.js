@@ -2,6 +2,13 @@
 import { store, getPath, setPath, AMBIENT_PRESETS, DISTANCE_PRESETS } from '../state.js';
 import { t, num, onLang } from '../i18n.js';
 import { reducedMotion } from './motion.js';
+import { computeScene } from '../sim/scene.js';
+
+// How much of the black level the native contrast decides under the current room light.
+function nativeImpact(p) {
+  const L = computeScene(p).light;
+  return L.nativeShare;
+}
 
 const pct = (v) => num(v * 100, 0);
 
@@ -57,7 +64,12 @@ export const SETUP_SECTIONS = [
       { type: 'range', key: 'projector.lumens', label: 'ctl.lumens', min: 500, max: 8000, step: 100, unit: 'lm', fmt: (v) => num(v) },
       { type: 'range', key: 'projector.lampHealth', label: 'ctl.lamp', min: 25, max: 100, step: 1, unit: '%', fmt: (v) => num(v), hint: 'hint.lamp' },
       { type: 'chips', key: 'projector.native', label: 'ctl.native', options: [{ value: 'svga', label: 'SVGA' }, { value: 'xga', label: 'XGA' }, { value: 'wxga', label: 'WXGA' }, { value: 'fhd', label: '1080p' }, { value: 'wuxga', label: 'WUXGA' }, { value: 'uhd', label: '4K' }], raw: true, adv: true },
-      { type: 'range', key: 'projector.contrast', label: 'ctl.contrast', min: 200, max: 20000, log: true, unit: ':1', fmt: (v) => num(Math.round(v / 50) * 50), adv: true },
+      { type: 'range', key: 'projector.contrast', label: 'ctl.contrast', min: 200, max: 20000, log: true, unit: ':1', fmt: (v) => num(Math.round(v / 50) * 50), adv: true,
+        hint: (p) => { const k = nativeImpact(p); return t(k < 0.02 ? 'hint.contrastLow' : 'hint.contrastNow', { p: k < 0.001 ? '<' + num(0.1, 1) : num(k * 100, k < 0.1 ? 1 : 0) }); },
+        dim: (p) => nativeImpact(p) < 0.02 },
+      { type: 'range', key: 'projector.ansi', label: 'ctl.ansi', min: 30, max: 1000, log: true, unit: ':1', fmt: (v) => num(Math.round(v / 5) * 5), hint: 'hint.ansi', adv: true },
+      { type: 'range', key: 'projector.gamma', label: 'ctl.gamma', min: 0.6, max: 1.8, step: 0.02, unit: '', fmt: (v) => num(v, 2), hint: 'hint.gamma', adv: true },
+      { type: 'range', key: 'projector.falloff', label: 'ctl.falloff', min: 0, max: 50, step: 1, unit: '%', fmt: (v) => num(v), hint: 'hint.falloff', adv: true },
       { type: 'range', key: 'projector.colorTemp', label: 'ctl.colorTemp', min: 5000, max: 11000, step: 100, unit: 'K', fmt: (v) => num(v), hint: 'hint.colorTemp', disabled: (p) => !!p.projector.colorMatrix, adv: true },
       { type: 'range', key: 'projector.saturation', label: 'ctl.saturation', min: 0.3, max: 1.3, step: 0.01, unit: '%', fmt: (v) => num(v * 100, 0), hint: 'hint.saturation', disabled: (p) => !!p.projector.colorMatrix, adv: true },
       { type: 'range', key: 'projector.focusMm', label: 'ctl.focus', min: 0, max: 10, step: 0.5, unit: 'mm', fmt: (v) => num(v, 1), hint: 'hint.focus', adv: true },
@@ -91,11 +103,14 @@ export const SETUP_SECTIONS = [
 
 function toSlider(it, v) {
   if (!it.log) return v;
+  if (it.min > 0) return Math.log(Math.max(v, it.min) / it.min) / Math.log(it.max / it.min) * 1000;
   return Math.log10(v + 1) / Math.log10(it.max + 1) * 1000;
 }
 function fromSlider(it, s) {
   if (!it.log) return Number(s);
-  const v = Math.pow(10, (s / 1000) * Math.log10(it.max + 1)) - 1;
+  const v = it.min > 0
+    ? it.min * Math.pow(it.max / it.min, s / 1000)
+    : Math.pow(10, (s / 1000) * Math.log10(it.max + 1)) - 1;
   const mag = Math.pow(10, Math.max(0, Math.floor(Math.log10(Math.max(v, 1))) - 1));
   return Math.max(it.min, Math.round(v / mag) * mag);
 }
@@ -235,10 +250,11 @@ function buildItem(content, it) {
       if (!visible(p)) return;
       wrap.querySelector('label').textContent = label(it.label, p);
       wrap.querySelector('small').textContent = it.unit;
-      if (it.hint) wrap.querySelector('.ctl-hint').textContent = t(it.hint);
+      if (it.hint) wrap.querySelector('.ctl-hint').textContent = typeof it.hint === 'function' ? it.hint(p) : t(it.hint);
       const v = getPath(p, it.key);
       input.disabled = it.disabled ? it.disabled(p) : false;
       wrap.style.opacity = input.disabled ? 0.45 : 1;
+      wrap.classList.toggle('dim', !!(it.dim && it.dim(p)));
       if (document.activeElement !== input || what !== 'params') {
         input.value = toSlider(it, v);
         paint();

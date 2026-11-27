@@ -10,6 +10,7 @@ export default {
   ui: { language: 'Dil', theme: 'Tema', close: 'Kapat', cancel: 'Vazgeç', save: 'Kaydet', done: 'Bitti', advanced: 'Gelişmiş' },
   theme: { system: 'Sistem', light: 'Aydınlık', dark: 'Karanlık' },
   view: {
+    lensHint: 'Büyüteç: panel piksellerini ve odağı yakından gör (Z)', lensTag: '{z}× · {w}×{h} piksel panel',
     label: 'Görünüm', room: 'Oda', screen: 'Perde', compare: 'Karşılaştır', compareHint: 'Bilgisayarındaki slaytla karşılaştır',
     safe: 'Güvenli alan', safeHint: 'Perdeye düşen alanı göster', heat: 'Sorunlar', heatHint: 'Zor okunan alanları işaretle',
     laptop: 'Bilgisayarında', projected: 'Perdede', toolbar: 'Görünüm', photo: 'Fotoğraf', opacity: 'Opaklık', opacityHint: 'Simüle slaytın gerçek fotoğrafı ne kadar örttüğü',
@@ -29,6 +30,7 @@ export default {
   panel: { label: 'Ayarlar' },
   sec: { room: 'Ortam ışığı', projector: 'Projektör', screen: 'Perde', picture: 'Görüntü', geometry: 'Konum ve keystone', viewer: 'Koltuğun', lightNow: 'Şu anki ışık', layout: 'Sınıf düzeni' },
   ctl: {
+    ansi: 'Görüntü içi kontrast', gamma: 'Ton eğrisi (gama)', falloff: 'Köşe kararması',
     ambient: 'Perdeye düşen ışık', ambientColor: 'Işık rengi', lumens: 'Etiket parlaklığı', lamp: 'Lamba durumu',
     contrast: 'Yerel kontrast', colorTemp: 'Renk sıcaklığı', native: 'Yerel çözünürlük', focus: 'Odak bulanıklığı',
     screenWidth: 'Perde genişliği', pictureWidth: 'Duvardaki görüntü genişliği', screenAspect: 'Perde oranı', gain: 'Perde kazancı',
@@ -37,7 +39,12 @@ export default {
     distance: 'İzleme mesafesi', acuity: 'Görme keskinliği', blur: 'Bulanıklık efekti', saturation: 'Doygunluk',
   },
   hint: {
-    ambient: 'Perde yüzeyinde ölçülen değer. Perdeye düşen her ışık siyahları soldurur.',
+    contrastNow: 'Bu ortam ışığında siyah seviyesinin %{p} kadarını belirliyor. En çok karanlık odada önemlidir.',
+    contrastLow: 'Bu ortam ışığında siyah seviyesinin yalnızca %{p} kadarını belirliyor; ortam ışığı ve saçılan ışık baskın. Etkisini görmek için odayı karartın.',
+    ansi: 'Görüntünün parlak bölgelerinden karanlık bölgelerine saçılan ışık (ANSI dama tahtası). Karanlık odada bile parlak slaytlarda kontrastı düşürür.',
+    gamma: '1’in üstü: ara tonlar koyu ve kontrastlı. 1’in altı: ara tonlar açılır, soluk görünür.',
+    falloff: 'Köşelerin merkeze göre ne kadar karanlık olduğu.',
+        ambient: 'Perde yüzeyinde ölçülen değer. Perdeye düşen her ışık siyahları soldurur.',
     lamp: 'Eski lambalar genellikle etiket değerinin %50–70’ini verir.',
     colorTemp: '6500 K üstünde görüntü mavi, altında sarı görünür.',
     focus: 'Keskin bir kenarın duvarda ne kadar yayıldığı.',
@@ -46,7 +53,7 @@ export default {
     keystone: 'Eğik duran projektörün yarattığı yamuk bozulma.',
     distance: 'Önemsediğin en uzak koltuğu seç. Oda görünümü de bu mesafeye göre yaklaşır/uzaklaşır.',
     saturation: 'Renklerin ne kadar canlı çıktığı. Eski projektörler ve aydınlık oda renkleri soldurur.',
-    blur: 'Mesafe, projektör çözünürlüğü ve odak nedeniyle oluşan bulanıklığı görüntüye uygular. Kapalıyken de “Neyi düzeltmeli” bu bulanıklığı hesaba katar.',
+    blur: 'Bu mesafedeki göz bulanıklığını ekler. Projektör çözünürlüğü ve odak her zaman gösterilir (büyüteçle yakından bakın, Z). “Neyi düzeltmeli” ikisini de her durumda hesaba katar.',
     surface: 'Kalibrasyon bunu kendisi seçer. Duvarda hiçbir şey kesilmez ama duvarın rengi görüntüyü boyar.',
     desk: 'Önde duran masa, alçakta kalan görüntünün alt kısmını kapatır.',
   },

@@ -11,6 +11,8 @@ export const DEFAULT_PARAMS = {
     lumens: 3000,
     lampHealth: 60,
     contrast: 2000,
+    ansi: 250, // in-picture (ANSI checkerboard) contrast
+    falloff: 20, // % darker in the corners than in the centre
     colorTemp: 8500,
     native: 'wxga',
     focusMm: 2,

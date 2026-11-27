@@ -58,7 +58,7 @@ export function deriveModel(fit, gamma, lighting) {
   const Yb = Math.max(1e-5, luminance(b));
   const ratio = Yb / Yw; // (black level + ambient) relative to projector white
   const effContrast = (Yw + Yb) / Yb;
-  const ambientLux = Math.max(0, ratio * (lighting.Epw - lighting.Epb) - lighting.Epb);
+  const ambientLux = Math.max(0, ratio * (lighting.Epw - lighting.Epb) - lighting.Epb - (lighting.flare || 0));
   // ambient colour: compare the red/blue balance of the floor level with the projector white
   const q = (b[0] / Math.max(b[2], 1e-6)) / (white[0] / Math.max(white[2], 1e-6));
   const ambientColor = q > 1.25 ? 'warm' : q > 1.07 ? 'neutral' : 'daylight';

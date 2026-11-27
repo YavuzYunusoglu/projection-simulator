@@ -5,7 +5,13 @@ import { toast, wireDialog } from '../ui/motion.js';
 import { saveProfile } from '../ui/profiles.js';
 import { solveHomography, squareToQuad, applyH, pointInPolygon, polygonArea } from '../sim/homography.js';
 import { computeScene } from '../sim/scene.js';
-import { srgbToLinear, linearToSrgb, simulateColor, projectorMatrix } from '../sim/photometry.js';
+import { srgbToLinear, linearToSrgb, simulateColor, projectorMatrix, flareLux } from '../sim/photometry.js';
+
+// average picture level of the test pattern (linear), for the stray-light estimate
+const PATTERN_APL = 0.4;
+// ANSI slider: logarithmic 30..1000
+const ansiToSlider = (v) => Math.round(Math.log(Math.max(30, v) / 30) / Math.log(1000 / 30) * 1000);
+const ansiFromSlider = (s) => Math.round(30 * Math.pow(1000 / 30, s / 1000));
 import { drawPattern, patternLayout, GRAYS, COLORS } from './pattern.js';
 import { grayPlane, detectMarkers, fitPatternAspect, estimateScreenInPattern, sampleWallColor, brightRegionQuad } from './detect.js';
 import { buildPhotoRoom, whiteMask } from './photoroom.js';
@@ -350,7 +356,7 @@ async function apply() {
   if (st.wallColor) p.room.wallColor = st.wallColor;
   const slide = store.state.slides[store.state.current];
   const sw = slide ? slide.width : 1920, sh = slide ? slide.height : 1080;
-  const sc = computeScene(p, sw, sh);
+  const sc = computeScene(p, sw, sh, st.tab === 'pattern' ? PATTERN_APL : 0.5);
   const color = st.tab === 'pattern' ? patternColorFit(proj) : photoColorFit(proj, screen || proj);
   let model = null, colorRejected = false;
   if (color) {
@@ -458,6 +464,10 @@ function resultsHtml() {
         <input type="range" id="tuneSat" min="0.3" max="1.3" step="0.01" value="${p.projector.saturation ?? 1}"></div>
       <div class="ctl"><div class="ctl-top"><label for="tuneAmb">${t('ctl.ambient')}</label><span class="ctl-val" id="tuneAmbV"></span></div>
         <input type="range" id="tuneAmb" min="0" max="1500" step="5" value="${p.room.ambientLux}"></div>
+      <div class="ctl"><div class="ctl-top"><label for="tuneGamma">${t('ctl.gamma')}</label><span class="ctl-val" id="tuneGammaV"></span></div>
+        <input type="range" id="tuneGamma" min="0.6" max="1.8" step="0.02" value="${p.projector.gamma || 1}"></div>
+      <div class="ctl"><div class="ctl-top"><label for="tuneAnsi">${t('ctl.ansi')}</label><span class="ctl-val" id="tuneAnsiV"></span></div>
+        <input type="range" id="tuneAnsi" min="0" max="1000" step="1" value="${ansiToSlider(p.projector.ansi || 250)}"></div>
       <label class="check"><input type="checkbox" id="useCam" ${st.useCamColor ? 'checked' : ''}><span>${t('calib.useCam')}</span></label>
       ${st.tab === 'pattern' ? `<div class="btn-row" style="margin-top:8px"><button class="btn" id="pickStart"><svg class="ic"><use href="#i-target"/></svg>${t('calib.pickStart')}</button>
         ${Object.keys(st.picks).length ? `<button class="btn" id="pickReset">${t('calib.pickReset')}</button>` : ''}</div>` : ''}`;
@@ -481,7 +491,8 @@ function updateStrip() {
   const slide = store.state.slides[store.state.current];
   const L = computeScene(p, slide ? slide.width : 1920, slide ? slide.height : 1080).light;
   const proj = p.projector.colorMatrix || projectorMatrix(L.tint, p.projector.saturation ?? 1);
-  const env = { proj, gamma: p.projector.gamma || 1, Epw: L.Epw, Epb: L.Epb, Ea: L.Ea, ambCol: L.ambCol };
+  // the test pattern is mostly mid grey: its stray light lifts every patch a little
+  const env = { proj, gamma: p.projector.gamma || 1, Epw: L.Epw, Epb: L.Epb, Ea: L.Ea, ambCol: L.ambCol, flare: flareLux(L.Epw, p.projector.ansi, PATTERN_APL) };
   const W = a.color.measured[7] || a.color.measured.find(Boolean);
   const wMax = W ? Math.max(...W, 1e-6) : 1;
   el.innerHTML = STRIP.map((i) => {
@@ -496,6 +507,8 @@ function updateStrip() {
   set('tuneTempV', `${num(p.projector.colorTemp)} K`);
   set('tuneSatV', `${num((p.projector.saturation ?? 1) * 100)} %`);
   set('tuneAmbV', `${num(p.room.ambientLux)} lx`);
+  set('tuneGammaV', num(p.projector.gamma || 1, 2));
+  set('tuneAnsiV', `${num(Math.round((p.projector.ansi || 250) / 5) * 5)}:1`);
   ['tuneTemp', 'tuneSat'].forEach((id) => { const e = $(id); if (e) e.disabled = !!p.projector.colorMatrix; });
 }
 
@@ -615,6 +628,8 @@ function renderSteps() {
   tune('tuneTemp', 'projector.colorTemp');
   tune('tuneSat', 'projector.saturation');
   tune('tuneAmb', 'room.ambientLux');
+  tune('tuneGamma', 'projector.gamma');
+  tune('tuneAnsi', 'projector.ansi', (v) => ansiFromSlider(Number(v)));
   const cam = $('useCam');
   if (cam) cam.addEventListener('change', () => {
     st.useCamColor = cam.checked;

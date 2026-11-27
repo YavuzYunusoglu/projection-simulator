@@ -49,6 +49,33 @@ void main() {
   outColor = vec4(acc, 1.0);
 }`;
 
+// Box-filter the sRGB slide down to the projector's native panel, output linear.
+export const RESAMPLE = `#version 300 es
+precision highp float;
+uniform sampler2D uTex;
+uniform vec2 uSrc;     // source size
+uniform vec2 uDst;     // panel size
+uniform int uEncode;
+in vec2 vRaw;
+out vec4 outColor;
+vec3 toLin(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
+void main() {
+  vec2 r = uSrc / uDst;                       // source pixels per panel pixel
+  float lod = max(0.0, log2(max(r.x, r.y) / 4.0));
+  vec2 cell = 1.0 / uDst;
+  vec2 o = vRaw - 0.5 * cell;
+  vec3 acc = vec3(0.0);
+  for (int j = 0; j < 4; j++) {
+    for (int i = 0; i < 4; i++) {
+      vec2 tc = o + (vec2(float(i), float(j)) + 0.5) * 0.25 * cell;
+      acc += toLin(textureLod(uTex, tc, lod).rgb);
+    }
+  }
+  acc /= 16.0;
+  if (uEncode == 1) acc = sqrt(max(acc, 0.0));
+  outColor = vec4(acc, 1.0);
+}`;
+
 // Scene compositor: wall, screen, whiteboard, window and the projected light.
 export const SCENE = `#version 300 es
 precision highp float;
@@ -84,6 +111,12 @@ uniform float uOpacity;       // photo view: opacity of the simulated slide
 uniform float uOrigRef;       // photo view: white level of the photo as taken
 uniform vec3 uStage;          // background for compare panel (sRGB)
 uniform vec3 uAdapt;          // viewer's chromatic adaptation white
+uniform float uFlareK;        // stray light per unit picture level (2 / ANSI contrast)
+uniform float uFalloff;       // brightness loss in the corners (0..1)
+uniform float uLodLocal, uLodGlobal;
+uniform vec2 uTexel;          // size of uSlide in pixels (the projector panel)
+uniform int uPixelate;        // 1: show panel pixels as crisp squares when magnified
+uniform vec3 uLens;           // magnifier circle in framebuffer pixels (r = 0: off)
 in vec2 vUv;
 out vec4 outColor;
 
@@ -101,6 +134,29 @@ vec3 tonemap(vec3 x) {
   return mix(x, k, step(0.82, x));
 }
 
+vec3 decodeS(vec3 s) { return uDecode == 1 ? s * s : s; }
+
+// Slide colour (linear) at uv. Panel pixels stay square when they are bigger than a screen pixel.
+vec3 slideAt(vec2 uv, vec2 fw) {
+  uv = clamp(uv, 0.0, 1.0);
+  if (uPixelate == 1) {
+    vec2 pix = uv * uTexel;
+    vec2 seam = floor(pix + 0.5);
+    vec2 dpx = max(fw * uTexel, vec2(1e-4));
+    pix = seam + clamp((pix - seam) / min(dpx, vec2(1.0)), -0.5, 0.5);
+    uv = pix / uTexel;
+  }
+  return decodeS(texture(uSlide, uv).rgb);
+}
+
+// Stray light colour: the picture's brightness around uv and overall.
+vec3 flareAt(vec2 uv) {
+  vec3 loc = decodeS(textureLod(uSlide, clamp(uv, 0.0, 1.0), uLodLocal).rgb);
+  vec3 glob = decodeS(textureLod(uSlide, vec2(0.5), uLodGlobal).rgb);
+  vec3 m = pow(max(mix(glob, loc, 0.5), 0.0), vec3(uGamma));
+  return max(uProj * m, 0.0);
+}
+
 // Projected light (lux, per channel) arriving at wall point p.
 vec3 projected(vec2 p, out float inside, out vec2 uv) {
   vec3 q = uHinv * vec3(p, 1.0);
@@ -109,14 +165,13 @@ vec3 projected(vec2 p, out float inside, out vec2 uv) {
   vec2 e = smoothstep(vec2(0.0), fw, uv) * smoothstep(vec2(0.0), fw, 1.0 - uv);
   inside = (q.z > 0.0) ? e.x * e.y : 0.0;
   if (inside <= 0.0) return vec3(0.0);
-  vec3 s = texture(uSlide, clamp(uv, 0.0, 1.0)).rgb;
-  if (uDecode == 1) s = s * s;
-  s = pow(max(s, 0.0), vec3(uGamma));
+  vec3 s = pow(max(slideAt(uv, fw), 0.0), vec3(uGamma));
   vec3 col = max(uProj * s, 0.0);
   vec3 blackTint = uProj * vec3(1.0);
-  vec2 d = (uv - 0.5) * vec2(1.0, 1.0 / uSlideAspect) * 1.6;
-  float falloff = 1.0 - 0.22 * dot(d, d);
-  vec3 E = (uEpb * blackTint + (uEpw - uEpb) * col) * falloff * uWarm;
+  vec2 d = (uv - 0.5) * vec2(1.0, 1.0 / uSlideAspect);
+  float dd = dot(d, d) / (0.25 + 0.25 / (uSlideAspect * uSlideAspect));
+  float falloff = 1.0 - uFalloff * dd;
+  vec3 E = (uEpb * blackTint + uEpw * uFlareK * flareAt(uv) + (uEpw - uEpb) * col) * falloff * uWarm;
   return E * inside;
 }
 
@@ -236,6 +291,7 @@ vec3 shade(vec2 p) {
 }
 
 void main() {
+  if (uLens.z > 0.0 && distance(gl_FragCoord.xy, uLens.xy) > uLens.z) discard;
   float ref = uGain * (uEpw + uEa) * 0.96;
   if (uMode == 1) {
     vec3 w = uH * vec3(vUv, 1.0);
@@ -256,9 +312,7 @@ void main() {
     vec3 col = vec3(0.0);
     bool insideP = q.z > 0.0 && uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0;
     if (insideP) {
-      vec3 s = texture(uSlide, uv).rgb;
-      if (uDecode == 1) s = s * s;
-      s = pow(max(s, 0.0), vec3(uGamma));
+      vec3 s = pow(max(slideAt(uv, max(fwidth(uv), vec2(1e-5))), 0.0), vec3(uGamma));
       col = max(uProj * s, 0.0);
     }
     vec3 L = (amb * uKA + pw * uKP * col * uWarm) / uPhotoRef;
