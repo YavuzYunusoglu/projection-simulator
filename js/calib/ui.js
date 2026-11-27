@@ -26,7 +26,7 @@ const st = {
   photoData: null,    // ImageData of photo
   photoBlob: null,
   refCanvas: null,
-  detected: null,     // { markers, aspect }
+  detected: null,     // { markers, aspect, quad: pattern corners in photo px (from the markers) }
   surface: 'screen',  // projection surface seen in the photo
   wallColor: null,
   applied: null,
@@ -157,7 +157,7 @@ function runPatternDetection() {
   st.surface = scr.surface;
   st.wallColor = sampleWallColor(rgba, w, h, best.H);
   const screen = scr.corners.map(([u, v]) => applyH(best.H, u, v).map((c) => c / s));
-  st.detected = { markers: best.markers.length, aspect: best.aspect };
+  st.detected = { markers: best.markers.length, aspect: best.aspect, quad: proj.map((c) => [...c]) };
   editor.setQuads({ proj, screen: st.surface === 'wall' ? null : screen });
   setStatus(`${t('calib.found', { n: best.markers.length })} · ${t('calib.aspectFound', { a: num(best.aspect, 2) })}`);
 }
@@ -212,7 +212,27 @@ function sampleRect(H, rect, inset = 0.25) {
   return n ? acc.map((v) => v / n) : null;
 }
 
+// Colours are read where the markers put the pattern, not from the orange frame: the user may
+// widen the frame to the projector's full picture (e.g. past a tablet's grey side bands).
+function patternQuad(projQuad) {
+  return st.detected && st.detected.quad ? st.detected.quad : projQuad;
+}
+
+/** White-background test in the orange frame's uv, via the detected pattern position. */
+function patternWhiteIn(projQuad) {
+  const L = whiteMask(st.detected ? st.detected.aspect : 16 / 9);
+  const Hframe = squareToQuad(projQuad);
+  const HpatInv = solveHomography(patternQuad(projQuad), [[0, 0], [1, 0], [1, 1], [0, 1]]);
+  if (!Hframe || !HpatInv) return L;
+  return (u, v) => {
+    const [x, y] = applyH(Hframe, u, v);
+    const [pu, pv] = applyH(HpatInv, x, y);
+    return L(pu, pv);
+  };
+}
+
 function patternColorFit(projQuad) {
+  projQuad = patternQuad(projQuad);
   const aspect = st.detected ? st.detected.aspect : 16 / 9;
   const L = patternLayout(aspect);
   const H = squareToQuad(projQuad);
@@ -324,7 +344,7 @@ async function apply() {
   const clampR = (r) => Math.min(2, Math.max(0.005, r));
   const ratio = clampR(model ? luminance(model.black) / Math.max(1e-6, luminance(model.white))
     : (L2.Ea + L2.Epb) / Math.max(1, L2.Epw - L2.Epb));
-  const isWhite = st.tab === 'pattern' ? whiteMask(st.detected ? st.detected.aspect : 16 / 9) : refWhiteMask();
+  const isWhite = st.tab === 'pattern' ? patternWhiteIn(proj) : refWhiteMask();
   let room = null;
   try { room = buildPhotoRoom(st.photo, proj, isWhite, ratio); } catch (e) { console.error(e); }
   const photoRejected = !room || !room.ok;

@@ -1,7 +1,7 @@
 // Offline support for the app shell and libraries.
 // Network first: online visitors always get the latest deploy (no mix of old and new modules);
 // the cache is only a fallback when offline.
-const VERSION = 'projsim-v5';
+const VERSION = 'projsim-v6';
 const ASSETS = [
   './',
   "./css/app.css",
