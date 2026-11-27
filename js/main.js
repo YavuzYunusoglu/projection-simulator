@@ -88,7 +88,8 @@ function buildTarget() {
     adapt,
     corners: scene.cornersM.flat(),
     Epw: L.Epw, Epb: L.Epb, Ea: L.Ea, ambCol: L.ambCol, proj, gamma: p.projector.gamma || 1,
-    sigma: scene.blur.sigma, cam, room: store.state.view === 'room' ? 1 : 0,
+    // the blur effect is optional on screen (off by default); analysis always uses it
+    sigma: p.viewer.blur ? scene.blur.sigma : 0, cam, room: store.state.view === 'room' ? 1 : 0,
     curtain: 1 - Math.min(1, Math.max(0, Math.log10(lux + 1) / Math.log10(900))),
     screenW: scene.screenW, screenH: scene.screenH, gain: L.gain,
     wb: room.wb, win: room.win, ceil: room.ceil, trunk: room.trunk, floor: room.floor, desk: room.desk,
@@ -212,7 +213,7 @@ function runAnalysis() {
   if (!renderer || !slideImage || !target || !lastU) return;
   const W = 1920, Hh = Math.round(W / scene.aspect);
   const H = solveHomography(UNIT, chunk(target.corners));
-  const base = { ...lastU, ...target, photoMode: 0, H, Hinv: invertH(H), warm: 1 };
+  const base = { ...lastU, ...target, photoMode: 0, H, Hinv: invertH(H), warm: 1, sigma: scene.blur.sigma };
   const sim = renderer.readSlideSpace(base, W, Hh);
   // contrast is judged without the viewer's blur (that is measured separately)
   const sharpPx = renderer.readSlideSpace({ ...base, sigma: 0 }, W, Hh);

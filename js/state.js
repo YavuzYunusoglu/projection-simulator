@@ -27,7 +27,7 @@ export const DEFAULT_PARAMS = {
     rotation: -0.6,
     corners: null,
   },
-  viewer: { distance: 7, acuity: 1.3 },
+  viewer: { distance: 7, acuity: 1.3, blur: false },
   // photo calibration: { quad, aspect, ratio, Ea0, Ep0, w, h } — the photo itself lives in IndexedDB
   calib: null,
 };
