@@ -16,6 +16,7 @@ export const DEFAULT_PARAMS = {
     focusMm: 2,
     gamma: 1,
     colorMatrix: null,
+    saturation: 1,
   },
   screen: { width: 1.8, aspect: '16:10', gain: 1 },
   geometry: {
@@ -134,6 +135,7 @@ function createStore() {
     view: 'room',
     compare: false,
     overlays: { safe: true, outline: true, heat: false },
+    photoOpacity: (() => { try { const v = Number(localStorage.getItem('projsim.photoOpacity')); return localStorage.getItem('projsim.photoOpacity') !== null && v >= 0 && v <= 1 ? v : 0.8; } catch { return 0.8; } })(),
   };
   const subs = new Set();
   let saveTimer = 0;

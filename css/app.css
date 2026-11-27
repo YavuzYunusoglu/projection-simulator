@@ -195,6 +195,19 @@ h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.005em; }
 body.pseudo-fs .stage { position: fixed; inset: 0; z-index: 50; }
 body.pseudo-fs { overflow: hidden; }
 
+.opacity-ctl { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); padding: 0 4px; }
+.opacity-ctl input { width: 110px; }
+.opacity-ctl b { font: 500 12px var(--mono); min-width: 36px; color: var(--ink); }
+.pick-panel { padding: 10px; border: 1px solid var(--accent); border-radius: var(--r); background: var(--accent-soft); }
+.pick-panel p { margin: 0 0 6px !important; }
+.tune-head { font-size: 13px; margin: 14px 0 2px; }
+.strip { display: grid; grid-template-columns: repeat(9, 1fr); gap: 3px; margin: 8px 0 2px; }
+.strip-col { display: grid; grid-template-rows: 14px 14px 14px; gap: 1px; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
+.strip-col i { display: block; }
+.strip-col i.none { background: repeating-linear-gradient(45deg, var(--line) 0 3px, transparent 3px 6px); }
+.strip-legend { display: grid; grid-template-rows: auto auto auto; margin-bottom: 8px; }
+.strip-legend span::before { content: '▪ '; }
+
 /* Top bar: modes and menu */
 .mode-tabs { display: flex; gap: 2px; margin-left: 10px; padding-left: 14px; border-left: 1px solid var(--line); height: 100%; }
 .mode-tabs > button {

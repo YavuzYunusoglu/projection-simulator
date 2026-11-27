@@ -12,6 +12,8 @@ export class QuadEditor {
     this.drag = null;
     this.selected = null;
     this.reveal = 0;
+    this.picks = [];      // [{ p: [x, y], label }]
+    this.pickFn = null;   // when set, a tap away from the handles picks a point
     this.revealStart = 0;
     canvas.tabIndex = 0;
     canvas.addEventListener('pointerdown', (e) => this.down(e));
@@ -20,6 +22,18 @@ export class QuadEditor {
     canvas.addEventListener('pointercancel', (e) => this.up(e));
     canvas.addEventListener('keydown', (e) => this.key(e));
     new ResizeObserver(() => this.draw()).observe(canvas);
+  }
+
+  /** Enter (fn) or leave (null) point-picking mode. */
+  setPickMode(fn) {
+    this.pickFn = fn;
+    this.canvas.style.cursor = fn ? 'crosshair' : 'default';
+    this.draw();
+  }
+
+  setPicks(picks) {
+    this.picks = picks;
+    this.draw();
   }
 
   setImage(img) {
@@ -74,8 +88,18 @@ export class QuadEditor {
   down(e) {
     if (!this.img) return;
     const [px, py] = this.eventPos(e);
-    const h = this.hit(px, py);
-    if (!h) return;
+    const h = this.pickFn ? null : this.hit(px, py);
+    if (!h) {
+      if (this.pickFn) {
+        const p = this.toImage(px, py);
+        if (p[0] >= 0 && p[1] >= 0 && p[0] < this.img.width && p[1] < this.img.height) {
+          this.showLoupe(p);
+          setTimeout(() => { this.loupe.hidden = true; }, 600);
+          this.pickFn(p);
+        }
+      }
+      return;
+    }
     this.canvas.setPointerCapture(e.pointerId);
     this.drag = h;
     this.selected = h;
@@ -90,7 +114,7 @@ export class QuadEditor {
     if (!this.img) return;
     const [px, py] = this.eventPos(e);
     if (!this.drag) {
-      this.canvas.style.cursor = this.hit(px, py) ? 'grab' : 'default';
+      if (!this.pickFn) this.canvas.style.cursor = this.hit(px, py) ? 'grab' : 'default';
       return;
     }
     const p = this.toImage(px - this.grab[0], py - this.grab[1]);
@@ -188,6 +212,22 @@ export class QuadEditor {
         g.beginPath(); g.arc(p[0], p[1], 2 * v.dpr, 0, Math.PI * 2); g.fill();
       });
       g.globalAlpha = 1;
+    }
+    // picked colour samples
+    g.font = `500 ${11 * v.dpr}px "Plex Mono", ui-monospace, monospace`;
+    for (const { p, label } of this.picks) {
+      const [x, y] = this.toCanvas(p);
+      g.lineWidth = 2 * v.dpr;
+      g.strokeStyle = '#000';
+      g.beginPath(); g.arc(x, y, 7 * v.dpr, 0, Math.PI * 2); g.stroke();
+      g.strokeStyle = '#fff';
+      g.lineWidth = 1.2 * v.dpr;
+      g.beginPath(); g.arc(x, y, 7 * v.dpr, 0, Math.PI * 2); g.stroke();
+      const tw = g.measureText(label).width + 8 * v.dpr;
+      g.fillStyle = 'rgba(0,0,0,.75)';
+      g.fillRect(x + 9 * v.dpr, y - 8 * v.dpr, tw, 16 * v.dpr);
+      g.fillStyle = '#fff';
+      g.fillText(label, x + 13 * v.dpr, y + 4 * v.dpr);
     }
   }
 }

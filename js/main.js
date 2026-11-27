@@ -2,6 +2,7 @@ import { store } from './state.js';
 import { t, num, applyI18n, setLang, getLang, onLang } from './i18n.js';
 import { setThemePref, getThemePref, onTheme, cssVar } from './theme.js';
 import { computeScene } from './sim/scene.js';
+import { projectorMatrix } from './sim/photometry.js';
 import { SimRenderer } from './sim/renderer.js';
 import { solveHomography, invertH, applyH } from './sim/homography.js';
 import { roomLayout, fitCamera, viewerCamera } from './sim/room.js';
@@ -75,7 +76,7 @@ function buildTarget() {
       : fitCamera(room.screen, aspect, 0.04, scene.cornersM);
   const proj = p.projector.colorMatrix
     ? p.projector.colorMatrix
-    : [L.tint[0], 0, 0, 0, L.tint[1], 0, 0, 0, L.tint[2]];
+    : projectorMatrix(L.tint, p.projector.saturation ?? 1);
   const lux = p.room.ambientLux;
   // The eye largely adapts to what fills the view: mostly room-lit walls plus the bright
   // screen (von Kries scaling, degree 0.85, room light weighted 3x for its larger area).
@@ -110,6 +111,8 @@ function buildTarget() {
     Object.assign(target, {
       photoMode: 1, photoSize: [photo.w, photo.h], kA, kP,
       photoRef: Math.max(1e-4, (photo.Yamb * kA + photo.Yproj * kP) / 0.96),
+      origRef: Math.max(1e-4, (photo.Yamb + photo.Yproj) / 0.96),
+      photoOpacity: store.state.photoOpacity,
       adapt: [1, 1, 1],
       screenW: Math.max(...xs) - Math.min(...xs), screenH: Math.max(...ys) - Math.min(...ys),
       center: [(Math.max(...xs) + Math.min(...xs)) / 2, (Math.max(...ys) + Math.min(...ys)) / 2],
@@ -320,6 +323,13 @@ store.subscribe((what) => {
 });
 let photoJustSet = false;
 export function showPhotoViewNext() { photoJustSet = true; }
+
+$('opacityRange').addEventListener('input', (e) => {
+  store.state.photoOpacity = Number(e.target.value) / 100;
+  $('opacityVal').textContent = `${e.target.value}%`;
+  try { localStorage.setItem('projsim.photoOpacity', String(store.state.photoOpacity)); } catch { /* ignore */ }
+  buildTarget();
+});
 
 // ---------- Modes ----------
 const MODE_KEY = 'projsim.mode';

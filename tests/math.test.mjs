@@ -131,3 +131,16 @@ test('projected onto a wall nothing is cut off, a desk in front hides the bottom
   assert.equal(s.isVisible(0.5, 0.98), false);
   assert.equal(s.isVisible(0.5, 0.1), true);
 });
+
+test('saturation matrix keeps luminance and greys; simulated white is the reference', async () => {
+  const { projectorMatrix, simulateColor } = await import('../js/sim/photometry.js');
+  const M = projectorMatrix([1, 1, 1], 0.5);
+  const apply = (v) => [0, 1, 2].map((r) => M[r * 3] * v[0] + M[r * 3 + 1] * v[1] + M[r * 3 + 2] * v[2]);
+  const red = apply([1, 0, 0]);
+  close(luminance(red), 0.2126, 1e-9);
+  assert.ok(red[1] > 0 && red[0] < 1);
+  apply([0.4, 0.4, 0.4]).forEach((v) => close(v, 0.4, 1e-9));
+  const env = { proj: projectorMatrix([1, 1, 1], 1), gamma: 1, Epw: 800, Epb: 0.4, Ea: 200, ambCol: [1, 1, 1] };
+  simulateColor([1, 1, 1], env).forEach((v) => close(v, 1, 1e-9));
+  simulateColor([0, 0, 0], env).forEach((v) => close(v, 200.4 / 1000, 1e-9));
+});

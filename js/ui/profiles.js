@@ -82,7 +82,7 @@ async function serialize(p) {
     params: p.params,
     createdAt: p.createdAt,
     photo: p.photo ? await blobToDataURL(p.photo) : null,
-    layers: p.layers ? { amb: await blobToDataURL(p.layers.amb), proj: await blobToDataURL(p.layers.proj) } : null,
+    layers: p.layers ? { amb: await blobToDataURL(p.layers.amb), proj: await blobToDataURL(p.layers.proj), orig: p.layers.orig ? await blobToDataURL(p.layers.orig) : null } : null,
   };
 }
 
@@ -101,7 +101,7 @@ async function importFile(file) {
         params: sanitizeParams(it.params),
         photo: it.photo && /^data:image\//.test(it.photo) ? await dataURLToBlob(it.photo) : null,
         layers: it.layers && /^data:image\//.test(it.layers.amb || '') && /^data:image\//.test(it.layers.proj || '')
-          ? { amb: await dataURLToBlob(it.layers.amb), proj: await dataURLToBlob(it.layers.proj) } : null,
+          ? { amb: await dataURLToBlob(it.layers.amb), proj: await dataURLToBlob(it.layers.proj), orig: /^data:image\//.test(it.layers.orig || '') ? await dataURLToBlob(it.layers.orig) : null } : null,
         createdAt: it.createdAt || Date.now(),
       });
       n++;

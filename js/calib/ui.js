@@ -5,7 +5,7 @@ import { toast, wireDialog } from '../ui/motion.js';
 import { saveProfile } from '../ui/profiles.js';
 import { solveHomography, squareToQuad, applyH, pointInPolygon, polygonArea } from '../sim/homography.js';
 import { computeScene } from '../sim/scene.js';
-import { srgbToLinear, linearToSrgb } from '../sim/photometry.js';
+import { srgbToLinear, linearToSrgb, simulateColor, projectorMatrix } from '../sim/photometry.js';
 import { drawPattern, patternLayout, GRAYS, COLORS } from './pattern.js';
 import { grayPlane, detectMarkers, fitPatternAspect, estimateScreenInPattern, sampleWallColor, brightRegionQuad } from './detect.js';
 import { buildPhotoRoom, whiteMask } from './photoroom.js';
@@ -31,6 +31,9 @@ const st = {
   wallColor: null,
   applied: null,
   dlSize: 'screen',
+  useCamColor: false, // apply the camera's colour cast (off: tone and contrast only)
+  picks: {},          // patch index -> { p: [x, y], rgb } picked by hand
+  picking: null,      // index into PICK_ORDER while picking
   matches: [],        // [{ key, name, src, score }] candidates for "which slide is in the photo"
   refKey: null,       // chosen candidate key, or 'none'
   step: 1,
@@ -231,23 +234,44 @@ function patternWhiteIn(projQuad) {
   };
 }
 
+// Fit from hand-picked patches only (black and white required).
+function pickedColorFit(L) {
+  const all = [...L.grays, ...L.colors];
+  const idx = Object.keys(st.picks).map(Number).sort((a, b) => a - b);
+  if (!st.picks[0] || !st.picks[L.grays.length - 1]) return null;
+  const inputs = idx.map((i) => all[i].rgb.map(srgbToLinear));
+  const measured = idx.map((i) => st.picks[i].rgb);
+  const grayIdx = idx.filter((i) => i < L.grays.length);
+  const gamma = grayIdx.length >= 3
+    ? fitGamma(grayIdx.map((i) => srgbToLinear(GRAYS[i])), grayIdx.map((i) => luminance(st.picks[i].rgb)))
+    : 1;
+  const fit = fitAffine(inputs.map((v) => v.map((x) => Math.pow(x, gamma))), measured);
+  // full-length arrays (by patch index) for the comparison strip
+  const fullIn = all.map((p) => p.rgb.map(srgbToLinear));
+  const fullMeas = all.map((_, i) => (st.picks[i] ? st.picks[i].rgb : null));
+  return { fit, gamma, measured: fullMeas, inputs: fullIn, manual: true };
+}
+
 function patternColorFit(projQuad) {
   projQuad = patternQuad(projQuad);
   const aspect = st.detected ? st.detected.aspect : 16 / 9;
   const L = patternLayout(aspect);
+  if (Object.keys(st.picks).length) return pickedColorFit(L);
   const H = squareToQuad(projQuad);
   const inputs = [], measured = [];
   const grayLum = [];
-  for (const p of L.grays) {
-    const m = sampleRect(H, p);
-    if (!m) return null;
+  L.grays.forEach((p, gi) => {
+    const m = st.picks[gi] ? st.picks[gi].rgb : sampleRect(H, p);
+    if (!m) return;
     inputs.push(p.rgb.map(srgbToLinear));
     measured.push(m);
     grayLum.push(0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]);
-  }
+  });
+  if (inputs.length < L.grays.length) return null;
   const gamma = fitGamma(GRAYS.map(srgbToLinear), grayLum);
-  for (const p of L.colors) {
-    const m = sampleRect(H, p);
+  for (const [ci, p] of L.colors.entries()) {
+    const k = L.grays.length + ci;
+    const m = st.picks[k] ? st.picks[k].rgb : sampleRect(H, p);
     if (!m) return null;
     inputs.push(p.rgb.map(srgbToLinear));
     measured.push(m);
@@ -334,7 +358,8 @@ async function apply() {
     if (!validateModel(color.fit, model, sc.light).ok) { model = null; colorRejected = true; }
   }
   if (model) {
-    p.projector.colorMatrix = model.colorMatrix;
+    // phone cameras white-balance on their own: their colour cast is only used on request
+    p.projector.colorMatrix = st.useCamColor ? model.colorMatrix : null;
     p.projector.gamma = model.gamma;
     p.room.ambientLux = Math.min(5000, model.ambientLux);
     p.room.ambientColor = model.ambientColor;
@@ -396,40 +421,127 @@ function step(n, title, body, state) {
   return `<div class="step ${state}"><span class="step-n">${state === 'done' ? '✓' : n}</span><div><h3>${title}</h3>${body}</div></div>`;
 }
 
+const STRIP = [0, 3, 7, 8, 9, 10, 11, 12, 13];
+const PICK_ORDER = [[0, 'black'], [3, 'gray'], [7, 'white'], [8, 'red'], [9, 'green'], [10, 'blue'], [11, 'cyan'], [12, 'magenta'], [13, 'yellow']];
+const rgbCss = (lin) => `rgb(${lin.map((v) => Math.round(linearToSrgb(Math.min(1, Math.max(0, v))) * 255)).join(',')})`;
+
+function pickPanelHtml() {
+  const [, key] = PICK_ORDER[st.picking];
+  return `<div class="pick-panel"><p><b>${t('calib.pickNow', { name: t('calib.patch.' + key), i: st.picking + 1, n: PICK_ORDER.length })}</b></p>
+    <p class="muted small">${t('calib.pickHint')}</p>
+    <div class="btn-row"><button class="btn" id="pickSkip">${t('calib.pickSkip')}</button>
+    <button class="btn primary" id="pickDone">${t('calib.pickDone')}</button>
+    <button class="btn" id="pickCancel">${t('ui.cancel')}</button></div></div>`;
+}
+
 function resultsHtml() {
   const a = st.applied;
   if (!a) return '';
+  if (st.picking !== null) return pickPanelHtml();
   const rows = [];
   const cuts = ['left', 'right', 'top', 'bottom'].filter((s) => a.cuts[s] > 0.005).map((s) => `${t('side.' + s)} ${num(a.cuts[s] * 100, 1)}%`);
   rows.push([t('calib.rSurface'), t(a.onWall ? 'layout.wall' : 'layout.screen')]);
   rows.push([t('calib.rVisible'), `${num(a.visible * 100, 0)}%`]);
   rows.push([t('calib.rCut'), cuts.length ? cuts.join(', ') : '—']);
-  let sw = '';
+  let extra = '';
   if (a.model) {
     rows.push([t('calib.rContrast'), `${num(a.model.effContrast, 1)}:1`]);
-    rows.push([t('calib.rAmbient'), `≈ ${num(a.ambient)} lx`]);
     rows.push([t('calib.rGamma'), num(a.model.gamma, 2)]);
-    if (a.color && a.color.measured) {
-      // normalise by the measured white patch (projector white + room light)
-      const Yw = Math.max(1e-6, luminance(a.color.measured[7]));
-      const cells = [];
-      const ids = [0, 3, 7, 8, 9, 10, 13];
-      for (const i of ids) {
-        const exp = a.color.inputs[i].map((v) => Math.round(linearToSrgb(v) * 255));
-        const got = a.color.measured[i].map((v) => Math.round(linearToSrgb(Math.min(1, v / Yw)) * 255));
-        cells.push(`<div style="background:rgb(${exp})"><i style="background:rgb(${got})"></i></div>`);
-      }
-      sw = `<div class="swatches" title="${t('calib.swatchHint')}">${cells.join('')}</div><p class="muted small">${t('calib.swatchHint')}</p>`;
-    }
+    const p = store.state.params;
+    extra = `<h4 class="tune-head">${t('calib.tuneTitle')}</h4>
+      <p class="muted small">${t('calib.tuneHint')}</p>
+      <div class="strip" id="tuneStrip"></div>
+      <div class="strip-legend small muted"><span>${t('calib.rowSent')}</span><span>${t('calib.rowCamera')}</span><span>${t('calib.rowSim')}</span></div>
+      <div class="ctl"><div class="ctl-top"><label for="tuneTemp">${t('ctl.colorTemp')}</label><span class="ctl-val" id="tuneTempV"></span></div>
+        <input type="range" id="tuneTemp" min="5000" max="11000" step="100" value="${p.projector.colorTemp}"></div>
+      <div class="ctl"><div class="ctl-top"><label for="tuneSat">${t('ctl.saturation')}</label><span class="ctl-val" id="tuneSatV"></span></div>
+        <input type="range" id="tuneSat" min="0.3" max="1.3" step="0.01" value="${p.projector.saturation ?? 1}"></div>
+      <div class="ctl"><div class="ctl-top"><label for="tuneAmb">${t('ctl.ambient')}</label><span class="ctl-val" id="tuneAmbV"></span></div>
+        <input type="range" id="tuneAmb" min="0" max="1500" step="5" value="${p.room.ambientLux}"></div>
+      <label class="check"><input type="checkbox" id="useCam" ${st.useCamColor ? 'checked' : ''}><span>${t('calib.useCam')}</span></label>
+      ${st.tab === 'pattern' ? `<div class="btn-row" style="margin-top:8px"><button class="btn" id="pickStart"><svg class="ic"><use href="#i-target"/></svg>${t('calib.pickStart')}</button>
+        ${Object.keys(st.picks).length ? `<button class="btn" id="pickReset">${t('calib.pickReset')}</button>` : ''}</div>` : ''}`;
   } else rows.push([t('calib.rColor'), t('calib.noColor')]);
   const notes = [];
   if (a.colorRejected) notes.push(t('calib.colorRejected'));
   if (a.photoRejected) notes.push(t('calib.photoRejected'));
-  if (notes.length) sw += notes.map((n) => `<p class="calib-warn">${n}</p>`).join('');
-  return `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>${sw}
+  extra += notes.map((n) => `<p class="calib-warn">${n}</p>`).join('');
+  return `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>${extra}
     <label class="field"><span>${t('profiles.name')}</span><input type="text" id="calibName" maxlength="60" value="${escapeHtml(t('profiles.defaultName'))}"></label>
     <div class="btn-row" style="margin-top:8px"><button class="btn primary" id="calibSave"><svg class="ic"><use href="#i-save"/></svg>${t('calib.saveProfile')}</button>
     <button class="btn" data-close>${t('ui.done')}</button></div>`;
+}
+
+/** Sent / camera / simulated colour columns, recomputed from the current settings. */
+function updateStrip() {
+  const el = $('tuneStrip');
+  const a = st.applied;
+  if (!el || !a || !a.color) return;
+  const p = store.state.params;
+  const slide = store.state.slides[store.state.current];
+  const L = computeScene(p, slide ? slide.width : 1920, slide ? slide.height : 1080).light;
+  const proj = p.projector.colorMatrix || projectorMatrix(L.tint, p.projector.saturation ?? 1);
+  const env = { proj, gamma: p.projector.gamma || 1, Epw: L.Epw, Epb: L.Epb, Ea: L.Ea, ambCol: L.ambCol };
+  const W = a.color.measured[7] || a.color.measured.find(Boolean);
+  const wMax = W ? Math.max(...W, 1e-6) : 1;
+  el.innerHTML = STRIP.map((i) => {
+    const sent = a.color.inputs[i];
+    const cam = a.color.measured[i];
+    const sim = simulateColor(sent, env);
+    return `<div class="strip-col"><i style="background:${rgbCss(sent)}"></i>
+      <i class="${cam ? '' : 'none'}" style="${cam ? `background:${rgbCss(cam.map((v) => v / wMax))}` : ''}"></i>
+      <i style="background:${rgbCss(sim)}"></i></div>`;
+  }).join('');
+  const set = (id, txt) => { const e = $(id); if (e) e.textContent = txt; };
+  set('tuneTempV', `${num(p.projector.colorTemp)} K`);
+  set('tuneSatV', `${num((p.projector.saturation ?? 1) * 100)} %`);
+  set('tuneAmbV', `${num(p.room.ambientLux)} lx`);
+  ['tuneTemp', 'tuneSat'].forEach((id) => { const e = $(id); if (e) e.disabled = !!p.projector.colorMatrix; });
+}
+
+function sampleAt([x, y]) {
+  const { photoData: d, photo } = st;
+  const acc = [0, 0, 0];
+  let n = 0;
+  for (let dy = -4; dy <= 4; dy++) {
+    for (let dx = -4; dx <= 4; dx++) {
+      const xi = Math.round(x) + dx, yi = Math.round(y) + dy;
+      if (xi < 0 || yi < 0 || xi >= photo.width || yi >= photo.height) continue;
+      const k = (yi * photo.width + xi) * 4;
+      for (let c = 0; c < 3; c++) acc[c] += srgbToLinear(d.data[k + c] / 255);
+      n++;
+    }
+  }
+  return acc.map((v) => v / Math.max(n, 1));
+}
+
+function showPicks() {
+  editor.setPicks(Object.values(st.picks).map((pk) => ({ p: pk.p, label: pk.label })));
+}
+
+function startPicking() {
+  st.picking = 0;
+  editor.setPickMode((pt) => {
+    const [idx, key] = PICK_ORDER[st.picking];
+    st.picks[idx] = { p: pt, rgb: sampleAt(pt), label: t('calib.patch.' + key) };
+    showPicks();
+    advancePick();
+  });
+  renderSteps();
+}
+
+function advancePick() {
+  st.picking++;
+  if (st.picking >= PICK_ORDER.length) finishPicking();
+  else renderSteps();
+}
+
+function finishPicking(cancel = false) {
+  if (!cancel && (!st.picks[0] || !st.picks[7])) { toast(t('calib.pickNeed')); return; }
+  st.picking = null;
+  editor.setPickMode(null);
+  if (cancel) { st.picks = {}; showPicks(); renderSteps(); return; }
+  apply();
 }
 
 const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -491,6 +603,25 @@ function renderSteps() {
     if (src) g.drawImage(src, 0, 0, rt.width, rt.height);
   }
   on('applyCalib', apply);
+  on('pickStart', startPicking);
+  on('pickSkip', advancePick);
+  on('pickDone', () => finishPicking(false));
+  on('pickCancel', () => finishPicking(true));
+  on('pickReset', () => { st.picks = {}; showPicks(); apply(); });
+  const tune = (id, path, parse = Number) => {
+    const e = $(id);
+    if (e) e.addEventListener('input', () => { store.setParam(path, parse(e.value)); updateStrip(); });
+  };
+  tune('tuneTemp', 'projector.colorTemp');
+  tune('tuneSat', 'projector.saturation');
+  tune('tuneAmb', 'room.ambientLux');
+  const cam = $('useCam');
+  if (cam) cam.addEventListener('change', () => {
+    st.useCamColor = cam.checked;
+    store.setParam('projector.colorMatrix', cam.checked && st.applied.model ? st.applied.model.colorMatrix : null);
+    updateStrip();
+  });
+  updateStrip();
   on('dlPattern', downloadPattern);
   const dl = $('dlSize');
   if (dl) dl.addEventListener('change', () => { st.dlSize = dl.value; renderSteps(); });
@@ -526,6 +657,10 @@ async function loadPhoto(file) {
     st.photoData = st.photo.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, st.photo.width, st.photo.height);
     st.applied = null;
     st.step = 4;
+    st.picks = {};
+    st.picking = null;
+    editor.setPickMode(null);
+    editor.setPicks([]);
     $('calibEmpty').hidden = true;
     editor.setImage(st.photo);
     await new Promise((r) => setTimeout(r, 30));

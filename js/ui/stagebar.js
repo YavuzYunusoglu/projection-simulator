@@ -42,6 +42,11 @@ export function updateStageBar() {
   $('fsCount').textContent = slides.length ? `${current + 1} / ${slides.length}` : '–';
   const photoBtn = document.querySelector('#viewSeg [data-view="photo"]');
   photoBtn.hidden = !photo;
+  const op = $('opacityCtl');
+  op.hidden = view !== 'photo' || !photo;
+  const r = $('opacityRange');
+  if (document.activeElement !== r) r.value = Math.round(store.state.photoOpacity * 100);
+  $('opacityVal').textContent = `${Math.round(store.state.photoOpacity * 100)}%`;
   document.querySelectorAll('#viewSeg [data-view]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.view === view)));
   document.querySelectorAll('#fsDist button').forEach((b) => {
     b.setAttribute('aria-pressed', String(Math.abs(params.viewer.distance - Number(b.dataset.m)) < 0.3));

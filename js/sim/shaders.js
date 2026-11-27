@@ -78,6 +78,10 @@ uniform sampler2D uProjTex;   // photo view: projector white layer
 uniform vec2 uPhotoSize;
 uniform vec2 uCenter;          // centre of the comparison panel
 uniform float uKA, uKP, uPhotoRef;
+uniform sampler2D uOrigTex;   // photo view: the calibration photo itself
+uniform int uHasOrig;
+uniform float uOpacity;       // photo view: opacity of the simulated slide
+uniform float uOrigRef;       // photo view: white level of the photo as taken
 uniform vec3 uStage;          // background for compare panel (sRGB)
 uniform vec3 uAdapt;          // viewer's chromatic adaptation white
 in vec2 vUv;
@@ -250,13 +254,19 @@ void main() {
     vec3 q = uHinv * vec3(p, 1.0);
     vec2 uv = q.xy / q.z;
     vec3 col = vec3(0.0);
-    if (q.z > 0.0 && uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0) {
+    bool insideP = q.z > 0.0 && uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0;
+    if (insideP) {
       vec3 s = texture(uSlide, uv).rgb;
       if (uDecode == 1) s = s * s;
       s = pow(max(s, 0.0), vec3(uGamma));
       col = max(uProj * s, 0.0);
     }
     vec3 L = (amb * uKA + pw * uKP * col * uWarm) / uPhotoRef;
+    if (insideP && uOpacity < 0.999) {
+      // let the real photo show through the simulated slide
+      vec3 under = uHasOrig == 1 ? toLin(texture(uOrigTex, tc).rgb) : amb + pw;
+      L = mix(under / uOrigRef, L, uOpacity);
+    }
     outColor = vec4(toSrgb(clamp(tonemap(L), 0.0, 1.0)), 1.0);
     return;
   }

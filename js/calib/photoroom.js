@@ -150,7 +150,8 @@ export function buildPhotoRoom(photo, quad, isWhite, ratio) {
   // reference white: median over the white samples (robust against a bad centre)
   const ys = samples.map((s) => { const f = smooth(s.u, s.v); return 0.2126 * f[0] + 0.7152 * f[1] + 0.0722 * f[2]; }).sort((a, b) => a - b);
   const Y = ys[Math.floor(ys.length / 2)];
-  const room = { amb, proj, w, h, quad: q, Yamb: Y * ka, Yproj: Y * kp, samples: samples.length };
+  // the photo itself, for blending the simulated slide back into the real picture
+  const room = { amb, proj, orig: src, w, h, quad: q, Yamb: Y * ka, Yproj: Y * kp, samples: samples.length };
   room.ok = roomUsable(room);
   return room;
 }

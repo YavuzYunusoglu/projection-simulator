@@ -55,6 +55,7 @@ export class SimRenderer {
     this.maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
     this.ambTex = null;
     this.projTex = null;
+    this.origTex = null;
   }
 
   _tex(w, h, internal, format, type, mip) {
@@ -131,11 +132,14 @@ export class SimRenderer {
     if (!room) {
       if (this.ambTex) this.gl.deleteTexture(this.ambTex);
       if (this.projTex) this.gl.deleteTexture(this.projTex);
-      this.ambTex = this.projTex = null;
+      if (this.origTex) this.gl.deleteTexture(this.origTex);
+      this.ambTex = this.projTex = this.origTex = null;
       return;
     }
     this.ambTex = this._upload(this.ambTex, room.amb);
     this.projTex = this._upload(this.projTex, room.proj);
+    if (room.orig) this.origTex = this._upload(this.origTex, room.orig);
+    else if (this.origTex) { this.gl.deleteTexture(this.origTex); this.origTex = null; }
   }
 
   _blur(sigma) {
@@ -188,6 +192,12 @@ export class SimRenderer {
     gl.activeTexture(gl.TEXTURE3);
     gl.bindTexture(gl.TEXTURE_2D, this.projTex);
     gl.uniform1i(u.uProjTex, 3);
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, this.origTex);
+    gl.uniform1i(u.uOrigTex, 4);
+    gl.uniform1i(u.uHasOrig, this.origTex ? 1 : 0);
+    gl.uniform1f(u.uOpacity, U.photoOpacity ?? 1);
+    gl.uniform1f(u.uOrigRef, U.origRef ?? 1);
     gl.uniform2f(u.uPhotoSize, U.photoSize ? U.photoSize[0] : 1, U.photoSize ? U.photoSize[1] : 1);
     gl.uniform1f(u.uKA, U.kA ?? 1);
     gl.uniform2f(u.uCenter, U.center ? U.center[0] : 0, U.center ? U.center[1] : 0);

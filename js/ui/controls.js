@@ -59,6 +59,7 @@ export const SETUP_SECTIONS = [
       { type: 'chips', key: 'projector.native', label: 'ctl.native', options: [{ value: 'svga', label: 'SVGA' }, { value: 'xga', label: 'XGA' }, { value: 'wxga', label: 'WXGA' }, { value: 'fhd', label: '1080p' }, { value: 'wuxga', label: 'WUXGA' }, { value: 'uhd', label: '4K' }], raw: true, adv: true },
       { type: 'range', key: 'projector.contrast', label: 'ctl.contrast', min: 200, max: 20000, log: true, unit: ':1', fmt: (v) => num(Math.round(v / 50) * 50), adv: true },
       { type: 'range', key: 'projector.colorTemp', label: 'ctl.colorTemp', min: 5000, max: 11000, step: 100, unit: 'K', fmt: (v) => num(v), hint: 'hint.colorTemp', disabled: (p) => !!p.projector.colorMatrix, adv: true },
+      { type: 'range', key: 'projector.saturation', label: 'ctl.saturation', min: 0.3, max: 1.3, step: 0.01, unit: '%', fmt: (v) => num(v * 100, 0), hint: 'hint.saturation', disabled: (p) => !!p.projector.colorMatrix, adv: true },
       { type: 'range', key: 'projector.focusMm', label: 'ctl.focus', min: 0, max: 10, step: 0.5, unit: 'mm', fmt: (v) => num(v, 1), hint: 'hint.focus', adv: true },
       { ...ITEMS.blur, adv: true },
     ],

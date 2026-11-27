@@ -136,6 +136,11 @@
           <button role="radio" data-view="screen" aria-checked="false" data-i18n-title="view.screenHint" title="Close-up of the picture"><svg class="ic"><use href="#i-screen"/></svg><span data-i18n="view.screen">Screen</span></button>
           <button role="radio" data-view="photo" aria-checked="false" hidden data-i18n-title="view.photoHint" title="Your slide in the calibration photo"><svg class="ic"><use href="#i-image"/></svg><span data-i18n="view.photo">Photo</span></button>
         </div>
+        <label class="opacity-ctl" id="opacityCtl" hidden data-i18n-title="view.opacityHint" title="Opacity of the simulated slide over the photo">
+          <span data-i18n="view.opacity">Opacity</span>
+          <input type="range" id="opacityRange" min="0" max="100" step="1">
+          <b id="opacityVal">80%</b>
+        </label>
         <span class="fs-sep"></span>
         <button class="btn toggle" id="compareBtn" aria-pressed="false" data-i18n-title="view.compareHint" title="Compare with the original"><svg class="ic"><use href="#i-compare"/></svg><span data-i18n="view.compare">Compare</span></button>
         <button class="btn toggle" id="safeBtn" aria-pressed="true" data-i18n-title="view.safeHint" title="Show safe zone"><svg class="ic"><use href="#i-safe"/></svg><span data-i18n="view.safe">Safe zone</span></button>

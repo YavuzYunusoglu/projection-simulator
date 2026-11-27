@@ -25,9 +25,9 @@ export function canvasToBlob(canvas, max = 1600, type = 'image/jpeg', q = 0.88) 
   return new Promise((res) => c.toBlob(res, type, q));
 }
 
-function install(amb, proj, calib, layers, thumb) {
+function install(amb, proj, calib, layers, thumb, orig = null) {
   store.state.photo = {
-    amb, proj, w: amb.width, h: amb.height,
+    amb, proj, orig, w: amb.width, h: amb.height,
     H: squareToQuad(calib.quad), Yamb: calib.Yamb, Yproj: calib.Yproj,
     calib, layers, thumb,
   };
@@ -35,8 +35,12 @@ function install(amb, proj, calib, layers, thumb) {
 
 /** Use freshly built layers (from buildPhotoRoom) and remember them as the working copy. */
 export async function useBuiltRoom(room, calib, thumb) {
-  const layers = { amb: await canvasToBlob(room.amb, 4000, 'image/jpeg', 0.9), proj: await canvasToBlob(room.proj, 4000, 'image/jpeg', 0.9) };
-  install(room.amb, room.proj, calib, layers, thumb);
+  const layers = {
+    amb: await canvasToBlob(room.amb, 4000, 'image/jpeg', 0.9),
+    proj: await canvasToBlob(room.proj, 4000, 'image/jpeg', 0.9),
+    orig: room.orig ? await canvasToBlob(room.orig, 4000, 'image/jpeg', 0.88) : null,
+  };
+  install(room.amb, room.proj, calib, layers, thumb, room.orig || null);
   putProfile({ id: WORKING_ID, name: WORKING_ID, layers, photo: thumb, params: null }).catch(() => {});
   store.emit('photo');
 }
@@ -48,8 +52,8 @@ export async function setRoomPhoto(layers, calib, thumb = null, { persist = true
     return;
   }
   try {
-    const [amb, proj] = await Promise.all([blobToCanvas(layers.amb), blobToCanvas(layers.proj)]);
-    install(amb, proj, calib, layers, thumb);
+    const [amb, proj, orig] = await Promise.all([blobToCanvas(layers.amb), blobToCanvas(layers.proj), layers.orig ? blobToCanvas(layers.orig) : null]);
+    install(amb, proj, calib, layers, thumb, orig);
     if (persist) putProfile({ id: WORKING_ID, name: WORKING_ID, layers, photo: thumb, params: null }).catch(() => {});
   } catch (e) {
     console.error(e);

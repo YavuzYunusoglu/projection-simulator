@@ -93,3 +93,29 @@ export function computeLighting(params, cornersMeters, area) {
   const effContrast = (Epw + Ea) / (Epb + Ea);
   return { lumens, Epw, Epb, Ea, ambCol, tint, gain, effContrast };
 }
+
+const LUMA = [0.2126, 0.7152, 0.0722];
+
+/** Projector colour matrix (row-major): colour-temperature tint × saturation (luminance kept). */
+export function projectorMatrix(tint, sat = 1) {
+  const M = [];
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) M.push(tint[r] * ((r === c ? sat : 0) + (1 - sat) * LUMA[c]));
+  }
+  return M;
+}
+
+/**
+ * How a sent colour (linear RGB) looks on the screen relative to the screen's white, as the
+ * shader computes it (without the viewer's chromatic adaptation). Returns linear RGB.
+ */
+export function simulateColor(rgb, { proj, gamma = 1, Epw, Epb, Ea, ambCol }) {
+  const s = rgb.map((v) => Math.pow(Math.max(v, 0), gamma));
+  const out = [];
+  for (let r = 0; r < 3; r++) {
+    const col = Math.max(0, proj[r * 3] * s[0] + proj[r * 3 + 1] * s[1] + proj[r * 3 + 2] * s[2]);
+    const black = proj[r * 3] + proj[r * 3 + 1] + proj[r * 3 + 2];
+    out.push((Ea * ambCol[r] + Epb * black + (Epw - Epb) * col) / (Epw + Ea));
+  }
+  return out;
+}
